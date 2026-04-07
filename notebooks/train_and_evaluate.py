@@ -80,7 +80,7 @@ CONFIG = {
     "test_csv": os.path.join(DATA_DIR, "merged.csv"),
     "label_column": "Label",
     "seq_len": 10,
-    "batch_size": 128,
+    "batch_size": 512,
     "epochs": 50,
     "lr": 1e-4,
     "noise_dim": 32,
@@ -150,7 +150,8 @@ class FlowDataset(Dataset):
 
 def get_loader(csv, seq_len, label, batch, shuffle, train_mode, norm_path=None):
     ds = FlowDataset(csv, seq_len, label, train_mode, norm_path)
-    return DataLoader(ds, batch_size=batch, shuffle=shuffle, num_workers=0, pin_memory=True), ds
+    nw = 2 if torch.cuda.is_available() else 0
+    return DataLoader(ds, batch_size=batch, shuffle=shuffle, num_workers=nw, pin_memory=True, persistent_workers=(nw > 0)), ds
 
 # %% [markdown]
 # ## 4. Model Architecture
@@ -267,6 +268,10 @@ def gradient_penalty(D, real, fake, device):
 opt_G = optim.Adam(G.parameters(), lr=CONFIG["lr"], betas=(0.5, 0.9))
 opt_D = optim.Adam(D.parameters(), lr=CONFIG["lr"], betas=(0.5, 0.9))
 
+# Mixed precision for GPU speedup
+use_amp = device.type == "cuda"
+scaler = torch.amp.GradScaler(enabled=use_amp)
+
 n_critic = CONFIG["n_critic"]
 gp_lambda = CONFIG["gp_lambda"]
 patience = CONFIG["patience"]
@@ -285,6 +290,8 @@ patience_counter = 0
 print(f"Starting training for up to {CONFIG['epochs']} epochs...")
 print(f"  Critic updates per generator update: {n_critic}")
 print(f"  Early stopping patience: {patience}")
+print(f"  Mixed precision (AMP): {use_amp}")
+print(f"  Batch size: {CONFIG['batch_size']}")
 print(f"  Device: {device}\n")
 
 for epoch in range(CONFIG["epochs"]):
@@ -309,12 +316,13 @@ for epoch in range(CONFIG["epochs"]):
         
         # --- Train Critic ---
         z = torch.randn(b, seq_len, noise_dim).to(device)
-        fake_x = G(z)
+        with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+            fake_x = G(z)
+            real_score = D(x)
+            fake_score = D(fake_x.detach())
         
-        real_score = D(x)
-        fake_score = D(fake_x.detach())
+        # GP must run in float32 (needs double backward)
         gp = gradient_penalty(D, x, fake_x.detach(), device)
-        
         d_loss = -(torch.mean(real_score) - torch.mean(fake_score)) + gp_lambda * gp
         
         opt_D.zero_grad()
@@ -329,8 +337,9 @@ for epoch in range(CONFIG["epochs"]):
         # --- Train Generator (every n_critic steps) ---
         if (i + 1) % n_critic == 0:
             z = torch.randn(b, seq_len, noise_dim).to(device)
-            fake_x = G(z)
-            g_loss = -torch.mean(D(fake_x))
+            with torch.amp.autocast(device_type=device.type, enabled=use_amp):
+                fake_x = G(z)
+                g_loss = -torch.mean(D(fake_x))
             
             opt_G.zero_grad()
             g_loss.backward()
