@@ -7,11 +7,17 @@ class FlowDataset(Dataset):
     def __init__(self, csv_path, seq_len, label_col, train_mode=False):
         df = pd.read_csv(csv_path)
 
-        if df[label_col].dtype == object:
+        # Handle both object dtype and pandas StringDtype (ArrowDtype etc.)
+        if pd.api.types.is_string_dtype(df[label_col]) or df[label_col].dtype == object:
             df[label_col] = (df[label_col] != "Benign").astype(int)
 
         if train_mode:
-            df = df[df[label_col] == 0]   # Benign only ??
+            df = df[df[label_col] == 0]   # Benign only
+            if len(df) == 0:
+                raise ValueError(
+                    f"No benign samples found in '{csv_path}'. "
+                    f"Check that the label column '{label_col}' contains 'Benign' entries."
+                )
 
         self.labels = df[label_col].values
         df = df.drop(columns=[label_col])

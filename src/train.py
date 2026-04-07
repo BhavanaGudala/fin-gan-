@@ -1,9 +1,16 @@
 import yaml
 import torch
 import os
+import sys
 import numpy as np
 from torch import optim
 from tqdm import tqdm
+
+# Resolve project root (one level above this src/ file)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.chdir(ROOT)  # make all relative paths work from project root
+sys.path.insert(0, os.path.join(ROOT, "src"))  # ensure src imports work
+
 from dataset import get_loader
 from model import Generator, Discriminator
 

@@ -1,4 +1,11 @@
 import yaml, torch, pandas as pd
+import os, sys
+
+# Resolve project root (one level above this src/ file)
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+os.chdir(ROOT)
+sys.path.insert(0, os.path.join(ROOT, "src"))
+
 from dataset import get_loader
 from model import Discriminator
 
