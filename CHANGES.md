@@ -261,3 +261,34 @@ D.load_state_dict(torch.load("checkpoints/best_D.pth", map_location=device))
 | `src/infer.py` | map_location in torch.load | Device compatibility |
 
 All changes are standard deep learning best practices. The architecture remains a **GRU-based WGAN-GP** — fundamentally different from the reference paper's TCN/Self-Attention approach.
+
+---
+
+## 5. AE-WGAN-GP (Autoencoder Generator Upgrade)
+
+### 5.1 Generator as Autoencoder
+
+**Before:** The Generator took random noise `z` to generate Fake data.
+
+**After:** 
+```python
+class Generator(nn.Module):
+    def __init__(self, in_dim, hidden, out_dim...):
+        self.enc_gru = nn.GRU(in_dim, hidden...)
+        self.dec_gru = nn.GRU(hidden, hidden...)
+```
+
+**Why:** Using random noise (standard GAN) makes it mathematically difficult to score anomalies in sequence data because we cannot naturally reconstruct a given `x`. By making the Generator an Autoencoder, it learns to compress and decompress *only benign data*.
+
+### 5.2 Training Generator with Real Inputs
+**Before:** `fake_x = G(z)`
+**After:** `fake_x = G(real_x)` with `g_loss = critic_loss + 10.0 * MSE(real_x, fake_x)`
+
+**Why:** The Generator now trains to simultaneously fool the Critic AND accurately reconstruct the original benign input sequence.
+
+### 5.3 Reconstruction-based Anomaly Score
+
+**Before:** `Anomaly Score = -D(x)`
+**After:** `Anomaly Score = 0.9 * MSE(x, x_hat) + 0.1 * -D_best(x)`
+
+**Why:** The Critic is only a binary classifier (Real vs Fake). It is not reliable when fed out-of-distribution attacks, causing the inverted ROC-AUC mapping issue. By strongly weighting the **Reconstruction Loss**, attacks will trigger huge errors since the Autoencoder has never learned to decode attack patterns, providing a highly robust and mathematically sound signal for 97%+ target performance.

@@ -3,27 +3,33 @@ import torch.nn as nn
 
 
 class Generator(nn.Module):
-    """
-    Generator: maps random noise sequences to fake network flow sequences.
-    Uses a 2-layer GRU with LayerNorm and Dropout for regularization.
-    """
-    def __init__(self, noise_dim, hidden, out_dim, num_layers=2, dropout=0.2):
+    def __init__(self, in_dim, hidden, out_dim, num_layers=2, dropout=0.2):
         super().__init__()
-        self.gru = nn.GRU(
-            noise_dim, hidden,
-            num_layers=num_layers,
-            batch_first=True,
-            dropout=dropout if num_layers > 1 else 0.0
-        )
+        # Encoder
+        self.enc_gru = nn.GRU(in_dim, hidden, num_layers=num_layers,
+                              batch_first=True, dropout=dropout if num_layers > 1 else 0.0)
+        
+        # Decoder 
+        self.dec_gru = nn.GRU(hidden, hidden, num_layers=num_layers,
+                              batch_first=True, dropout=dropout if num_layers > 1 else 0.0)
+
         self.norm = nn.LayerNorm(hidden)
         self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(hidden, out_dim)
 
-    def forward(self, z):
-        h, _ = self.gru(z)          # (batch, seq_len, hidden)
-        h = self.norm(h)            # normalize hidden states
-        h = self.dropout(h)         # regularize
-        return self.fc(h)           # (batch, seq_len, out_dim)
+    def forward(self, x):
+        batch, seq_len, _ = x.shape
+        # Encode
+        _, hidden_state = self.enc_gru(x)
+        
+        # Take the top layer's hidden state, repeat it for seq_len to decode
+        context = hidden_state[-1].unsqueeze(1).repeat(1, seq_len, 1)
+        
+        # Decode
+        h, _ = self.dec_gru(context)
+        h = self.norm(h)
+        h = self.dropout(h)
+        return self.fc(h)
 
 
 class AttentionPooling(nn.Module):

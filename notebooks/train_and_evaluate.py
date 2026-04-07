@@ -161,16 +161,30 @@ def get_loader(csv, seq_len, label, batch, shuffle, train_mode, norm_path=None):
 
 # %%
 class Generator(nn.Module):
-    def __init__(self, noise_dim, hidden, out_dim, num_layers=2, dropout=0.2):
+    def __init__(self, in_dim, hidden, out_dim, num_layers=2, dropout=0.2):
         super().__init__()
-        self.gru = nn.GRU(noise_dim, hidden, num_layers=num_layers,
-                          batch_first=True, dropout=dropout if num_layers > 1 else 0.0)
+        # Encoder
+        self.enc_gru = nn.GRU(in_dim, hidden, num_layers=num_layers,
+                              batch_first=True, dropout=dropout if num_layers > 1 else 0.0)
+        
+        # Decoder 
+        self.dec_gru = nn.GRU(hidden, hidden, num_layers=num_layers,
+                              batch_first=True, dropout=dropout if num_layers > 1 else 0.0)
+
         self.norm = nn.LayerNorm(hidden)
         self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(hidden, out_dim)
 
-    def forward(self, z):
-        h, _ = self.gru(z)
+    def forward(self, x):
+        batch, seq_len, _ = x.shape
+        # Encode
+        _, hidden_state = self.enc_gru(x)
+        
+        # Take the top layer's hidden state, repeat it for seq_len to decode
+        context = hidden_state[-1].unsqueeze(1).repeat(1, seq_len, 1)
+        
+        # Decode
+        h, _ = self.dec_gru(context)
         h = self.norm(h)
         h = self.dropout(h)
         return self.fc(h)
@@ -232,7 +246,8 @@ print(f"  Feature names: {train_ds.feature_names[:5]}... ({len(train_ds.feature_
 
 # %%
 # Initialize models now that we know feat_dim
-G = Generator(CONFIG["noise_dim"], CONFIG["hidden_dim"], feat_dim,
+# Generator now uses feat_dim as input because it's an Autoencoder
+G = Generator(feat_dim, CONFIG["hidden_dim"], feat_dim,
               CONFIG["num_layers"], CONFIG["dropout"]).to(device)
 D = Discriminator(feat_dim, CONFIG["hidden_dim"],
                   CONFIG["num_layers"], CONFIG["dropout"]).to(device)
@@ -315,9 +330,9 @@ for epoch in range(CONFIG["epochs"]):
         b, seq_len, _ = x.shape
         
         # --- Train Critic ---
-        z = torch.randn(b, seq_len, noise_dim).to(device)
+        # Feed real_x into the Autoencoder generator
         with torch.amp.autocast(device_type=device.type, enabled=use_amp):
-            fake_x = G(z)
+            fake_x = G(x)
             real_score = D(x)
             fake_score = D(fake_x.detach())
         
@@ -336,10 +351,11 @@ for epoch in range(CONFIG["epochs"]):
         
         # --- Train Generator (every n_critic steps) ---
         if (i + 1) % n_critic == 0:
-            z = torch.randn(b, seq_len, noise_dim).to(device)
             with torch.amp.autocast(device_type=device.type, enabled=use_amp):
-                fake_x = G(z)
-                g_loss = -torch.mean(D(fake_x))
+                fake_x = G(x)
+                critic_loss = -torch.mean(D(fake_x))
+                recon_loss = torch.nn.functional.mse_loss(fake_x, x)
+                g_loss = critic_loss + 10.0 * recon_loss
             
             opt_G.zero_grad()
             g_loss.backward()
@@ -453,11 +469,16 @@ test_loader, test_ds = get_loader(
 print(f"  Total test samples: {len(test_ds.data):,}")
 print(f"  Test windows: {len(test_ds):,}")
 
-# Load best model
+# Load best models
 D_best = Discriminator(feat_dim, CONFIG["hidden_dim"],
                        CONFIG["num_layers"], CONFIG["dropout"]).to(device)
 D_best.load_state_dict(torch.load(os.path.join(CKPT_DIR, "best_D.pth"), map_location=device))
 D_best.eval()
+
+G_best = Generator(feat_dim, CONFIG["hidden_dim"], feat_dim,
+                   CONFIG["num_layers"], CONFIG["dropout"]).to(device)
+G_best.load_state_dict(torch.load(os.path.join(CKPT_DIR, "best_G.pth"), map_location=device))
+G_best.eval()
 
 # Score all windows
 scores = []
@@ -467,8 +488,21 @@ print("Running inference...")
 with torch.no_grad():
     for x, y in tqdm(test_loader, desc="Inference"):
         x = x.to(device)
-        s = -D_best(x)  # anomaly score = negative critic score
-        scores.extend(s.cpu().numpy().flatten())
+        
+        x_hat = G_best(x)
+        # Reconstruction Error over the feature dimension
+        recon_error = torch.mean((x - x_hat) ** 2, dim=-1)
+        recon_error = recon_error.mean(dim=1).cpu().numpy()
+        
+        # Critic Score (D gives high score for "real", low for "fake")
+        # So -D(x) gives high score for anomalous data
+        critic_score = -D_best(x).cpu().numpy().flatten()
+        
+        # Combined anomaly score: heavily weight reconstruction error
+        # alpha can be tuned, e.g., 0.9.
+        s = 0.9 * recon_error + 0.1 * critic_score
+        
+        scores.extend(s)
         labels.extend(y.numpy())
 
 scores = np.array(scores)

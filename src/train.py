@@ -64,7 +64,8 @@ gp_lambda = cfg.get("gp_lambda", 10)
 patience = cfg.get("patience", 10)
 
 # Initialize Models
-G = Generator(noise_dim, hidden_dim, feat_dim, num_layers, dropout).to(device)
+# Generator now uses feat_dim as input because it's an Autoencoder
+G = Generator(feat_dim, hidden_dim, feat_dim, num_layers, dropout).to(device)
 D = Discriminator(feat_dim, hidden_dim, num_layers, dropout).to(device)
 
 # Optimizers
@@ -91,8 +92,8 @@ for epoch in range(cfg["epochs"]):
         # ==============================
         # Train Critic (n_critic steps)
         # ==============================
-        z = torch.randn(b, seq_len, noise_dim).to(device)
-        fake_x = G(z)
+        # Feed real_x into the Autoencoder
+        fake_x = G(x)
 
         real_score = D(x)
         fake_score = D(fake_x.detach())
@@ -110,9 +111,12 @@ for epoch in range(cfg["epochs"]):
         # Train Generator (every n_critic steps)
         # ==============================
         if (i + 1) % n_critic == 0:
-            z = torch.randn(b, seq_len, noise_dim).to(device)
-            fake_x = G(z)
-            g_loss = -torch.mean(D(fake_x))
+            fake_x = G(x)
+            
+            # Generator wants to fool discriminator AND reconstruct the input
+            critic_loss = -torch.mean(D(fake_x))
+            recon_loss = torch.nn.functional.mse_loss(fake_x, x)
+            g_loss = critic_loss + 10.0 * recon_loss
 
             opt_G.zero_grad()
             g_loss.backward()
