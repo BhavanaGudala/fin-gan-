@@ -20,7 +20,8 @@ def gradient_penalty(D, real, fake, device):
     interpolated = alpha * real + (1 - alpha) * fake
     interpolated.requires_grad_(True)
 
-    d_interpolated = D(interpolated)
+    with torch.backends.cudnn.flags(enabled=False):
+        d_interpolated = D(interpolated)
 
     gradients = torch.autograd.grad(
         outputs=d_interpolated,
