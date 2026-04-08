@@ -95,7 +95,8 @@ test_pf = np.concatenate(test_per_feat, axis=0)  # (N_test, feat_dim)
 pf_z = (test_pf - pf_mu) / pf_std  # (N_test, feat_dim) z-scored per feature
 # Feature importance: how much each feature deviates from benign on average
 feat_d = np.abs(pf_z.mean(axis=0))  # average z-deviation per feature
-feat_w = np.exp(feat_d) / np.exp(feat_d).sum()  # softmax weights
+feat_d_safe = feat_d - feat_d.max()  # log-sum-exp trick to prevent overflow
+feat_w = np.exp(feat_d_safe) / np.exp(feat_d_safe).sum()  # softmax weights
 weighted_recon = (pf_z * feat_w).sum(axis=1)  # weighted anomaly score
 
 recon_z = (recon_raw - recon_mu) / max(recon_sigma, 1e-8)

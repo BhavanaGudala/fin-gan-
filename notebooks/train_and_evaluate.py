@@ -82,8 +82,8 @@ CONFIG = {
     "test_csv": os.path.join(DATA_DIR, "merged.csv"),
     "label_column": "Label",
     "seq_len": 20,
-    "batch_size": 512,
-    "epochs": 200,
+    "batch_size": 1024,
+    "epochs": 300,
     "lr_G": 1e-4,
     "lr_D": 5e-5,
     "noise_dim": 32,
@@ -92,10 +92,10 @@ CONFIG = {
     "dropout": 0.2,
     "n_critic": 5,
     "gp_lambda": 20,
-    "patience": 30,
+    "patience": 40,
     "recon_weight": 100.0,
     "use_cosine_lr": True,
-    "cosine_T_max": 200,
+    "cosine_T_max": 300,
     "cosine_eta_min_G": 1e-5,
     "cosine_eta_min_D": 5e-6,
 }
@@ -341,6 +341,13 @@ G = Generator(feat_dim, CONFIG["hidden_dim"], feat_dim,
 D = Discriminator(feat_dim, CONFIG["hidden_dim"],
                   CONFIG["num_layers"], CONFIG["dropout"]).to(device)
 
+# Multi-GPU: wrap with DataParallel if more than one GPU
+num_gpus = torch.cuda.device_count()
+if num_gpus > 1:
+    print(f"  Using {num_gpus} GPUs via DataParallel")
+    G = torch.nn.DataParallel(G)
+    D = torch.nn.DataParallel(D)
+
 print(f"\nGenerator:     {count_params(G):,} parameters")
 print(f"Discriminator: {count_params(D):,} parameters")
 print(f"Total:         {count_params(G) + count_params(D):,} parameters")
@@ -353,10 +360,12 @@ def gradient_penalty(D, real, fake, device):
     alpha = torch.rand(real.size(0), 1, 1).to(device)
     interpolated = alpha * real + (1 - alpha) * fake
     interpolated.requires_grad_(True)
+    # Use underlying module for GP (DataParallel doesn't support double backward)
+    D_module = D.module if hasattr(D, 'module') else D
     # Disable CuDNN for this forward pass — CuDNN doesn't support
     # double backwards through RNNs, which gradient penalty requires
     with torch.backends.cudnn.flags(enabled=False):
-        d_interpolated = D(interpolated)
+        d_interpolated = D_module(interpolated)
     gradients = torch.autograd.grad(
         outputs=d_interpolated, inputs=interpolated,
         grad_outputs=torch.ones_like(d_interpolated),
@@ -407,6 +416,7 @@ print(f"  Critic updates per generator update: {n_critic}")
 print(f"  Early stopping patience: {patience}")
 print(f"  Mixed precision (AMP): {use_amp}")
 print(f"  Batch size: {CONFIG['batch_size']}")
+print(f"  GPUs: {torch.cuda.device_count()}")
 print(f"  Device: {device}\n")
 
 for epoch in range(CONFIG["epochs"]):
@@ -498,8 +508,11 @@ for epoch in range(CONFIG["epochs"]):
     # Early stopping based on reconstruction loss (autoencoder quality)
     if avg_recon < best_recon:
         best_recon = avg_recon
-        torch.save(D.state_dict(), os.path.join(CKPT_DIR, "best_D.pth"))
-        torch.save(G.state_dict(), os.path.join(CKPT_DIR, "best_G.pth"))
+        # Save underlying module (unwrap DataParallel)
+        G_save = G.module if hasattr(G, 'module') else G
+        D_save = D.module if hasattr(D, 'module') else D
+        torch.save(D_save.state_dict(), os.path.join(CKPT_DIR, "best_D.pth"))
+        torch.save(G_save.state_dict(), os.path.join(CKPT_DIR, "best_G.pth"))
         patience_counter = 0
         print(f"  ✓ Best model saved (recon: {best_recon:.6f})")
     else:
@@ -652,7 +665,8 @@ test_pf = np.concatenate(test_per_feat, axis=0)
 # Per-feature weighted scoring
 pf_z = (test_pf - pf_mu) / pf_std
 feat_d = np.abs(pf_z.mean(axis=0))
-feat_w = np.exp(feat_d) / np.exp(feat_d).sum()
+feat_d_safe = feat_d - feat_d.max()  # log-sum-exp trick to prevent overflow
+feat_w = np.exp(feat_d_safe) / np.exp(feat_d_safe).sum()
 weighted_recon = (pf_z * feat_w).sum(axis=1)
 
 # Normalise to z-scores using benign baselines
