@@ -41,15 +41,13 @@ with torch.no_grad():
         # Pool to sequence level
         recon_error = recon_error.mean(dim=1).cpu().numpy()
         
-        # Critic Score (D gives high score for "real", low for "fake")
-        # So -D(x) gives high score for anomalous data
-        critic_score = -D(x).cpu().numpy().flatten()
-        
-        # Combined anomaly score: heavily weight reconstruction error
-        # alpha can be tuned, e.g., 0.9.
-        s = 0.9 * recon_error + 0.1 * critic_score
-        
-        scores.extend(s)
+        # Anomaly score = reconstruction error only.
+        # The critic score is unreliable when D(real) drifts negative during
+        # WGAN training — negating it inverts benign scores upward, poisoning
+        # the combined signal.  Pure recon error is the natural anomaly
+        # metric for an autoencoder: attacks the AE has never seen produce
+        # large reconstruction error; benign data it was trained on does not.
+        scores.extend(recon_error)
         labels.extend(y.numpy())
 
 pd.DataFrame({"score": scores, "Label": labels}).to_csv(

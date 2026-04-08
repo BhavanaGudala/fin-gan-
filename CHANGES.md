@@ -289,6 +289,17 @@ class Generator(nn.Module):
 ### 5.3 Reconstruction-based Anomaly Score
 
 **Before:** `Anomaly Score = -D(x)`
-**After:** `Anomaly Score = 0.9 * MSE(x, x_hat) + 0.1 * -D_best(x)`
+**After (v1):** `Anomaly Score = 0.9 * MSE(x, x_hat) + 0.1 * -D_best(x)`
+**After (v2 — current):** `Anomaly Score = MSE(x, x_hat)`
 
-**Why:** The Critic is only a binary classifier (Real vs Fake). It is not reliable when fed out-of-distribution attacks, causing the inverted ROC-AUC mapping issue. By strongly weighting the **Reconstruction Loss**, attacks will trigger huge errors since the Autoencoder has never learned to decode attack patterns, providing a highly robust and mathematically sound signal for 97%+ target performance.
+**Why (v1):** The Critic is only a binary classifier (Real vs Fake). It is not reliable when fed out-of-distribution attacks, causing the inverted ROC-AUC mapping issue. By strongly weighting the **Reconstruction Loss**, attacks will trigger huge errors since the Autoencoder has never learned to decode attack patterns, providing a highly robust and mathematically sound signal for 97%+ target performance.
+
+**Why (v2):** The combined score from v1 still produced a **ROC-AUC of 0.4674** (worse than random). Root cause analysis of the training logs revealed:
+
+1. **Critic score inversion:** During WGAN training, D(real) drifted to large negative values (−25 at epoch 11). The anomaly score used `−D(x)`, which means for benign data: `−(−25) = +25`. This **pushed benign scores upward**, partially inverting the signal — benign flows scored *higher* than some attacks.
+
+2. **Training collapse:** D(real) and D(fake) both drifted negative together (−25 and −52 respectively) instead of converging. The generator loss kept rising (16 → 60), indicating the autoencoder never learned to properly reconstruct benign data. The critic was providing meaningless gradients.
+
+3. **Scale mismatch:** Even with 0.9/0.1 weighting, the critic scores (range: −50 to +5) and reconstruction errors (range: 0 to 5000+) operated on completely different scales. The 10% critic contribution was enough to corrupt the ranking of borderline samples.
+
+**The fix:** Use **pure reconstruction error** as the anomaly score. This is the mathematically natural metric for an autoencoder-based anomaly detector: the generator was trained only on benign data, so attacks it has never seen produce large reconstruction error. The critic score is dropped entirely because it is unreliable when WGAN training has not converged properly.
