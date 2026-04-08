@@ -1074,7 +1074,74 @@ Despite the drift, the latent representations are clearly excellent (AUC=0.9999)
 - `src/infer.py` — LR fusion replaced with 5-fold StratifiedKFold CV
 - `notebooks/train_and_evaluate.py` — All above mirrored: `raw_labels` in FlowDataset, LR fusion CV, per-attack uses `test_ds.raw_labels`
 
-### 16.5 Results Summary Table
+### 16.5 Phase 9 Results (Run 12)
+
+Re-trained 300 epochs on Kaggle T4x2 with Phase 9 evaluation fixes applied. Same model/training code as Phase 8 — only evaluation pipeline changed.
+
+| Metric | Phase 8 Run 11 (buggy eval) | Phase 9 Run 12 (fixed eval) | Notes |
+|---|---|---|---|
+| **ROC-AUC (Learned Fusion CV)** | 1.0000* (leakage) | **0.9999** | Now fair 5-fold CV |
+| **ROC-AUC (Latent Mahalanobis)** | 0.9999 | 0.9998 | Unsupervised, no labels |
+| **ROC-AUC (PF Mahalanobis)** | 0.9989 | 0.9993 | Unsupervised |
+| **ROC-AUC (All 4 signals sum)** | 0.9996 | 0.9996 | Unchanged |
+| **ROC-AUC (Recon_z + D_z)** | 0.9914 | 0.9925 | Improved slightly |
+| **ROC-AUC (Mean MSE raw)** | 0.9231 | 0.9186 | Within noise |
+| **ROC-AUC (-D(x) raw)** | — | 0.7408 | Critic alone is weak |
+| **TPR (Recall)** | 99.81% | 99.63% | Honest threshold |
+| **FPR** | 0.27% | 0.53% | Honest threshold |
+| **Accuracy** | 99.80% | 99.62% | Honest |
+| **Precision** | — | 99.97% | — |
+| **F1** | 0.9990 | 0.9980 | — |
+| **Best epoch** | — | 296 | — |
+| **Best recon** | — | 0.8113 | — |
+| **Train time** | — | 76.3 min | — |
+
+**Confusion matrix (Run 12, threshold=0.876):**
+| | Predicted Normal | Predicted Attack |
+|---|---|---|
+| **Actual Normal** | 19,444 (TN) | 104 (FP) |
+| **Actual Attack** | 1,234 (FN) | 332,306 (TP) |
+
+**LR fusion coefficients (Run 12, full-data refit for inspection only):**
+| Signal | Coefficient |
+|---|---|
+| `latent_z` | 16.553 (dominant) |
+| `d_z` | 1.562 |
+| `recon_z` | −0.917 |
+| `pf_mahal_z` | −0.942 |
+
+**Per-attack detection rates (Run 12 — now accurate with label alignment fix):**
+
+| Attack Type | Count | Detected | Rate |
+|---|---|---|---|
+| DrDoS_DNS | 3,669 | 3,668 | **99.97%** |
+| DrDoS_LDAP | 1,440 | 1,440 | **100.00%** |
+| DrDoS_MSSQL | 6,212 | 6,212 | 100.00% |
+| DrDoS_NTP | 121,368 | 121,368 | 100.00% |
+| DrDoS_NetBIOS | 598 | 598 | **100.00%** |
+| DrDoS_SNMP | 2,717 | 2,717 | 100.00% |
+| DrDoS_UDP | 10,420 | 10,420 | 100.00% |
+| LDAP | 1,906 | 1,906 | 100.00% |
+| MSSQL | 8,523 | 8,523 | 100.00% |
+| NetBIOS | 644 | 644 | 100.00% |
+| Portmap | 685 | 685 | 100.00% |
+| Syn | 49,373 | 48,378 | 97.98% |
+| TFTP | 98,917 | 98,917 | 100.00% |
+| UDP | 18,090 | 17,859 | 98.72% |
+| UDP-lag | 8,872 | 8,871 | 99.99% |
+| UDPLag | 55 | 49 | 89.09% |
+| WebDDoS | 51 | 51 | 100.00% |
+| **Benign (TNR)** | **19,548** | **19,444** | **99.47%** |
+
+Previously "invisible" attacks from Run 10 (DrDoS_DNS 6.9%, LDAP 3.4%, NetBIOS 22%) are now detected at **99.97–100%** — confirming the Mahalanobis scoring from Phase 8 was the breakthrough, and the poor Run 10 per-attack numbers were due to the label alignment bug (not model weakness).
+
+Remaining weak spots: Syn (97.98%), UDP (98.72%), UDPLag (89.09% but only 55 samples).
+
+**GP drift (Run 12):** 0.08 → 0.82 — same pattern as Run 11. D(real)≈23.07, D(fake)≈−23.44. Still diverging but clearly not harming latent quality.
+
+**Key validation:** Learned Fusion CV AUC dropped only from 1.0000 → 0.9999 after removing data leakage. This confirms the underlying signals (especially `latent_z`) are genuinely near-perfect separators — the leakage inflated the number by only 0.0001. The 5-fold CV result is trustworthy.
+
+### 16.6 Results Summary Table
 
 | Phase | Run | Best AUC | Scoring Method | Key Change |
 |---|---|---|---|---|
@@ -1083,5 +1150,5 @@ Despite the drift, the latent representations are clearly excellent (AUC=0.9999)
 | Phase 5 | 5 | 0.9300 | Mean MSE | Data pipeline overhaul |
 | Phase 6 | 8 | 0.9833 | Mean MSE | Critic stability |
 | Phase 7+7b | 10 | 0.9842 | Recon_z + D_z | Capacity + rate features + speed |
-| Phase 8 | 11 | **0.9999** | Latent Mahalanobis | Scoring overhaul (unsupervised) |
-| Phase 9 | — | pending | — | Evaluation bug fixes (no retraining) |
+| Phase 8 | 11 | 0.9999* | Latent Mahalanobis | Scoring overhaul (*eval bugs) |
+| **Phase 9** | **12** | **0.9999** | **Learned Fusion (CV)** | **Eval bug fixes, validated** |
