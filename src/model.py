@@ -32,6 +32,11 @@ class Generator(nn.Module):
         h = self.dropout(h)
         return self.fc(h)
 
+    def encode(self, x):
+        """Extract encoder's top-layer hidden state (latent vector)."""
+        _, hidden_state = self.enc_gru(x)
+        return hidden_state[-1]  # (batch, hidden_dim)
+
 
 class AttentionPooling(nn.Module):
     """

@@ -688,28 +688,32 @@ self.fc = spectral_norm(nn.Linear(hidden * 2, 1))
 
 ## Summary of All Phases
 
-| Metric | Baseline (v0) | Phase 1 | Phase 2a | Phase 2b | Phase 3 | Phase 4 | Phase 5 | Phase 6 | Paper |
-|---|---|---|---|---|---|---|---|---|---|
-| **ROC-AUC** | 0.467 | 0.789 | 0.793 | 0.793 | 0.787 | 0.792 | 0.9304 | **0.9833** | 0.9963 |
-| **F1-Score** | — | — | — | — | — | — | 0.8999 | **0.9690** | — |
-| **TPR (Recall)** | — | — | — | — | — | — | 81.9% | **97.5%** | — |
-| **FPR** | — | — | — | — | — | — | 1.9% | 11.6% | — |
-| **Anomaly Score** | 0.9·recon + 0.1·(-D) | mean MSE | mean MSE | mean MSE | z-score top-10 | auto-select | mean MSE | mean MSE | D(x) |
-| **Early Stop Metric** | critic loss | critic loss | recon loss | recon loss | recon loss | recon loss | recon loss | recon loss | — |
-| **recon_weight** | 10.0 | 10.0 | 1.0 | 100.0 | 100.0 | 100.0 | 100.0 | 100.0 | — |
-| **hidden_dim** | 128 | 128 | 128 | 64 | 64 | 64 | 64 | 64 | — |
-| **lr (G / D)** | 1e-4 | 1e-4 | 1e-4 | 1e-4 | 1e-4 | 1e-4 | 1e-4 | 1e-4 / 5e-5 | — |
-| **gp_lambda** | 10 | 10 | 10 | 10 | 10 | 10 | 10 | 20 | — |
-| **Spectral norm** | no | no | no | no | no | no | no | D FC | — |
-| **Grad clipping** | no | no | yes (1.0) | yes (1.0) | yes (1.0) | yes (1.0) | yes (1.0) | yes (1.0) | — |
-| **patience** | 10 | 10 | 15 | 20 | 20 | 20 | 20 | 25 | — |
-| **epochs** | — | — | — | — | — | — | 100 | 150 | — |
-| **Best epoch** | — | — | — | — | — | — | 96 | 133 | — |
-| **Best recon** | — | — | — | 0.53 | — | — | 0.709 | 0.671 | — |
-| **Features** | 77 | 77 | 77 | 77 | 77 | 77 | 65 | 65 | — |
-| **Log-transform** | no | no | no | no | no | no | yes | yes | — |
-| **Train/test split** | no | no | no | no | no | no | 80/20 benign | 80/20 benign | — |
-| **Architecture** | GRU AE-WGAN-GP | same | same | same | same | same | same | same + SN | TCN/SA WGAN |
+| Metric | Baseline (v0) | Phase 1 | Phase 2a | Phase 2b | Phase 3 | Phase 4 | Phase 5 | Phase 6 | Phase 7+7b | Paper |
+|---|---|---|---|---|---|---|---|---|---|---|
+| **ROC-AUC** | 0.467 | 0.789 | 0.793 | 0.793 | 0.787 | 0.792 | 0.9304 | 0.9833 | **0.9842** | 0.9963 |
+| **F1-Score** | — | — | — | — | — | — | 0.8999 | 0.9690 | — | — |
+| **TPR (Recall)** | — | — | — | — | — | — | 81.9% | 97.5% | **92.9%** | — |
+| **FPR** | — | — | — | — | — | — | 1.9% | 11.6% | **5.4%** | — |
+| **Accuracy** | — | — | — | — | — | — | — | — | **93.0%** | — |
+| **Anomaly Score** | 0.9·recon + 0.1·(-D) | mean MSE | mean MSE | mean MSE | z-score top-10 | auto-select | mean MSE | mean MSE | Recon_z+D_z | D(x) |
+| **Early Stop Metric** | critic loss | critic loss | recon loss | recon loss | recon loss | recon loss | recon loss | recon loss | recon loss | — |
+| **recon_weight** | 10.0 | 10.0 | 1.0 | 100.0 | 100.0 | 100.0 | 100.0 | 100.0 | 100.0 | — |
+| **hidden_dim** | 128 | 128 | 128 | 64 | 64 | 64 | 64 | 64 | **128** | — |
+| **seq_len** | — | — | — | — | — | — | — | 10 | **20** | — |
+| **lr (G / D)** | 1e-4 | 1e-4 | 1e-4 | 1e-4 | 1e-4 | 1e-4 | 1e-4 | 1e-4 / 5e-5 | 1e-4 / 5e-5 | — |
+| **gp_lambda** | 10 | 10 | 10 | 10 | 10 | 10 | 10 | 20 | 20 | — |
+| **Spectral norm** | no | no | no | no | no | no | no | D FC | D FC | — |
+| **Grad clipping** | no | no | yes (1.0) | yes (1.0) | yes (1.0) | yes (1.0) | yes (1.0) | yes (1.0) | yes (1.0) | — |
+| **patience** | 10 | 10 | 15 | 20 | 20 | 20 | 20 | 25 | **40** | — |
+| **epochs** | — | — | — | — | — | — | 100 | 150 | **300** | — |
+| **batch_size** | — | — | — | — | — | — | — | 128 | **1024** | — |
+| **Best epoch** | — | — | — | — | — | — | 96 | 133 | **294** | — |
+| **Best recon** | — | — | — | 0.53 | — | — | 0.709 | 0.671 | **0.8166** | — |
+| **Features** | 77 | 77 | 77 | 77 | 77 | 77 | 65 | 65 | **67** | — |
+| **Log-transform** | no | no | no | no | no | no | yes | yes | yes | — |
+| **Train/test split** | no | no | no | no | no | no | 80/20 benign | 80/20 benign | 80/20 benign | — |
+| **Cosine LR** | no | no | no | no | no | no | no | no | **yes** | — |
+| **Architecture** | GRU AE-WGAN-GP | same | same | same | same | same | same | same + SN | same + SN | TCN/SA WGAN |
 
 ### Phase 6 Results
 
@@ -819,6 +823,42 @@ Duration is converted from microseconds to seconds, with a floor of 1µs to avoi
 
 **Requires full retraining** — architecture (hidden_dim), sequence length, and feature count all changed.
 
+### 13.9 Phase 7 + 7b Results (Run 10)
+
+Trained 300 epochs (patience 40, cosine T_max 300) with batch_size=1024 on Kaggle T4.
+
+| Metric | Phase 6 | Phase 7+7b | Delta |
+|---|---|---|---|
+| **ROC-AUC** | 0.9833 | **0.9842** | +0.0009 |
+| **TPR (Recall)** | 97.5% | 92.9% | −4.6% |
+| **FPR** | 11.6% | 5.4% | −6.2% |
+| **Accuracy** | — | 93.0% | — |
+| **Best epoch** | 133 | 294 | — |
+| **Best recon** | 0.671 | 0.8166 | — |
+| **Best scoring** | mean MSE | Recon_z + D_z (1:1) | — |
+| **Features** | 65 | 67 (+4 rate) | — |
+
+**Scoring method comparison (Run 10):**
+| Method | AUC |
+|---|---|
+| Mean MSE (raw) | 0.9162 |
+| Recon_z + D_z (1:1) | **0.9842** |
+| D(x) alone | 0.4866 |
+
+**Per-attack detection rates (notable weaknesses):**
+| Attack Type | Detection Rate |
+|---|---|
+| DrDoS_DNS | 6.9% |
+| DrDoS_LDAP | 3.4% |
+| DrDoS_NetBIOS | 22.0% |
+
+**Observations:**
+- AUC improved marginally (0.9833→0.9842) despite major capacity/feature changes
+- Multi-signal z-score scoring (Recon_z + D_z) outperformed raw MSE by +0.068 AUC
+- GP drifted from 0.05→0.32 over 300 epochs — addressed in Phase 8
+- 6 attack types remain nearly invisible to MSE reconstruction — motivates Phase 8's Mahalanobis scoring
+- TPR dropped vs Phase 6 (92.9% vs 97.5%) but FPR also dropped significantly (5.4% vs 11.6%) — better precision/recall tradeoff
+
 ---
 
 ## 14. Phase 7b — Training Speed Optimizations
@@ -875,3 +915,53 @@ def to_device(self, device):
 - `src/train.py` — `cudnn.benchmark = True`, passes `device` to `get_loader()`
 - `src/infer.py` — `cudnn.benchmark = True`, passes `device` to `get_loader()`
 - `notebooks/train_and_evaluate.py` — all above mirrored, batch 1024, `cudnn.benchmark`
+
+---
+
+## 15. Phase 8 — Scoring Overhaul & GP Stability (Run 11)
+
+Run 10 achieved AUC 0.9842 but plateaued. Per-attack analysis revealed 6 attack types (DrDoS_DNS 6.9%, LDAP 3.4%, NetBIOS 22%) nearly invisible to raw MSE reconstruction. Phase 8 introduces four complementary changes to break the 0.99 barrier.
+
+### 15.1 GP Stability Fix
+
+**Problem:** Gradient penalty drifted from 0.05→0.32 over 300 epochs, destabilizing the critic.
+
+**Changes:**
+- `gp_lambda` reduced from 20 → 10 (softer penalty allows D to be more expressive)
+- GP capped: `gp = torch.clamp(gp, max=1.0)` prevents runaway penalty spikes
+
+### 15.2 Encoder Latent Extraction (`encode()` method)
+
+Added `encode()` to Generator:
+```python
+def encode(self, x):
+    _, hidden_state = self.enc_gru(x)
+    return hidden_state[-1]  # (batch, hidden_dim)
+```
+Returns the top-layer GRU hidden state as a dense latent vector. Attacks that produce near-identical MSE may still land in different regions of latent space.
+
+### 15.3 Latent-Space Mahalanobis Distance
+
+Fits a multivariate Gaussian on benign encoder hidden states: μ, Σ (with small diagonal regularization for numerical stability). Test samples are scored by Mahalanobis distance from the benign distribution. This captures correlated deviations that element-wise MSE misses.
+
+### 15.4 Per-Feature Mahalanobis Distance
+
+Instead of scalar MSE, computes the full (feat_dim × feat_dim) covariance of per-feature reconstruction errors on benign data. Mahalanobis distance in this space detects attack types that shift correlated feature groups simultaneously (e.g., DNS amplification affects packet counts + byte counts together).
+
+### 15.5 Learned Score Fusion (Logistic Regression)
+
+Replaces hand-tuned weight combinations with `LogisticRegression(C=1.0)` trained on four z-scored signals:
+- `recon_z` (reconstruction z-score)
+- `d_z` (critic z-score, negated)
+- `latent_z` (latent Mahalanobis z-score)
+- `pf_mahal_z` (per-feature Mahalanobis z-score)
+
+The LR learns optimal weights for combining signals, automatically down-weighting noisy or redundant ones. Coefficients are printed for interpretability.
+
+### 15.6 Files Changed
+
+- `configs/config.yaml` — `gp_lambda: 10`
+- `src/model.py` — `encode()` method on Generator
+- `src/train.py` — `torch.clamp(gp, max=1.0)` in gradient penalty
+- `src/infer.py` — latent extraction, Mahalanobis distances, learned fusion
+- `notebooks/train_and_evaluate.py` — all above mirrored

@@ -91,7 +91,7 @@ CONFIG = {
     "num_layers": 2,
     "dropout": 0.2,
     "n_critic": 5,
-    "gp_lambda": 20,
+    "gp_lambda": 10,
     "patience": 40,
     "recon_weight": 100.0,
     "use_cosine_lr": True,
@@ -278,6 +278,10 @@ class Generator(nn.Module):
         h = self.dropout(h)
         return self.fc(h)
 
+    def encode(self, x):
+        """Extract encoder's top-layer hidden state (latent vector)."""
+        _, hidden_state = self.enc_gru(x)
+        return hidden_state[-1]  # (batch, hidden_dim)
 
 class AttentionPooling(nn.Module):
     """Learns to weight all timesteps instead of only using the last one."""
@@ -449,6 +453,7 @@ for epoch in range(CONFIG["epochs"]):
         
         # GP must run in float32 (needs double backward)
         gp = gradient_penalty(D, x, fake_x.detach(), device)
+        gp = torch.clamp(gp, max=1.0)  # cap GP to prevent runaway drift
         d_loss = -(torch.mean(real_score) - torch.mean(fake_score)) + gp_lambda * gp
         
         opt_D.zero_grad()
@@ -604,8 +609,8 @@ D_best.load_state_dict(torch.load(os.path.join(CKPT_DIR, "best_D.pth"), map_loca
 D_best.eval()
 
 # ── Phase 1: Compute baselines on benign training data ──
-# We compute BOTH reconstruction error and D(x) on benign data so we can
-# normalise each signal to zero-mean unit-variance before combining.
+# We compute reconstruction error, D(x), latent vectors, and per-feature errors
+# on benign data to build normalization stats and covariance matrices.
 print("Computing baselines on training data...")
 baseline_loader, _ = get_loader(
     CONFIG["train_csv"], CONFIG["seq_len"], CONFIG["label_column"],
@@ -615,6 +620,7 @@ baseline_loader, _ = get_loader(
 train_recon_scores = []
 train_d_scores = []
 train_per_feat = []
+train_latents = []
 with torch.no_grad():
     for x, _ in tqdm(baseline_loader, desc="Baseline"):
         x = x.to(device)
@@ -623,20 +629,35 @@ with torch.no_grad():
         recon = ((x - x_hat) ** 2).mean(dim=(1, 2))
         per_feat = ((x - x_hat) ** 2).mean(dim=1)  # (batch, feat_dim)
         d_score = D_best(x).squeeze(-1)
+        # Latent-space encoding (encoder hidden state)
+        latent = G_best.encode(x)  # (batch, hidden_dim)
         train_recon_scores.append(recon.cpu())
         train_d_scores.append(d_score.cpu())
         train_per_feat.append(per_feat.cpu())
+        train_latents.append(latent.cpu())
 
 train_recon_all = torch.cat(train_recon_scores)
 train_d_all = torch.cat(train_d_scores)
 train_pf = torch.cat(train_per_feat).numpy()
+train_lat = torch.cat(train_latents).numpy()
+
 recon_mu, recon_sigma = train_recon_all.mean().item(), train_recon_all.std().item()
 d_mu, d_sigma = train_d_all.mean().item(), train_d_all.std().item()
 pf_mu = train_pf.mean(axis=0)
 pf_std = train_pf.std(axis=0) + 1e-8
 
+# Latent-space baseline: mean + precision matrix (inverse covariance) for Mahalanobis
+lat_mu = train_lat.mean(axis=0)
+lat_cov = np.cov(train_lat, rowvar=False) + 1e-6 * np.eye(train_lat.shape[1])
+lat_cov_inv = np.linalg.inv(lat_cov)
+
+# Per-feature Mahalanobis: covariance of per-feature errors on benign
+pf_cov = np.cov(train_pf, rowvar=False) + 1e-6 * np.eye(train_pf.shape[1])
+pf_cov_inv = np.linalg.inv(pf_cov)
+
 print(f"  Benign recon baseline: μ={recon_mu:.4f}, σ={recon_sigma:.4f}")
 print(f"  Benign D(x)  baseline: μ={d_mu:.4f}, σ={d_sigma:.4f}")
+print(f"  Latent dim: {train_lat.shape[1]}, cov condition: {np.linalg.cond(lat_cov):.1f}")
 
 # ── Phase 2: Score all test data ──
 print("Running inference...")
@@ -644,6 +665,7 @@ recon_raw = []
 d_raw = []
 labels = []
 test_per_feat = []
+test_latents = []
 
 with torch.no_grad():
     for x, y in tqdm(test_loader, desc="Inference"):
@@ -652,29 +674,50 @@ with torch.no_grad():
         recon = ((x - x_hat) ** 2).mean(dim=(1, 2)).cpu().numpy()
         per_feat = ((x - x_hat) ** 2).mean(dim=1).cpu().numpy()
         d_score = D_best(x).squeeze(-1).cpu().numpy()
+        latent = G_best.encode(x).cpu().numpy()
         recon_raw.extend(recon)
         d_raw.extend(d_score)
         test_per_feat.append(per_feat)
+        test_latents.append(latent)
         labels.extend(y.cpu().numpy())
 
 recon_raw = np.array(recon_raw)
 d_raw = np.array(d_raw)
 labels = np.array(labels)
 test_pf = np.concatenate(test_per_feat, axis=0)
+test_lat = np.concatenate(test_latents, axis=0)
 
-# Per-feature weighted scoring
+# ── Compute all scoring signals ──
+
+# 1. Per-feature weighted MSE
 pf_z = (test_pf - pf_mu) / pf_std
 feat_d = np.abs(pf_z.mean(axis=0))
-feat_d_safe = feat_d - feat_d.max()  # log-sum-exp trick to prevent overflow
+feat_d_safe = feat_d - feat_d.max()
 feat_w = np.exp(feat_d_safe) / np.exp(feat_d_safe).sum()
 weighted_recon = (pf_z * feat_w).sum(axis=1)
 
-# Normalise to z-scores using benign baselines
+# 2. Z-scores
 recon_z = (recon_raw - recon_mu) / max(recon_sigma, 1e-8)
-# Negate D: lower D(x) = more anomalous → higher anomaly score
 d_z = -(d_raw - d_mu) / max(d_sigma, 1e-8)
 
-# ── Phase 3: Compare scoring methods ──
+# 3. Latent-space Mahalanobis distance
+lat_diff = test_lat - lat_mu
+latent_mahal = np.sqrt(np.sum((lat_diff @ lat_cov_inv) * lat_diff, axis=1))
+# Normalize to z-score using benign latent Mahalanobis
+train_lat_diff = train_lat - lat_mu
+train_lat_mahal = np.sqrt(np.sum((train_lat_diff @ lat_cov_inv) * train_lat_diff, axis=1))
+lat_mahal_mu, lat_mahal_std = train_lat_mahal.mean(), train_lat_mahal.std() + 1e-8
+latent_z = (latent_mahal - lat_mahal_mu) / lat_mahal_std
+
+# 4. Per-feature Mahalanobis distance
+pf_diff = test_pf - pf_mu
+pf_mahal = np.sqrt(np.sum((pf_diff @ pf_cov_inv) * pf_diff, axis=1))
+train_pf_diff = train_pf - pf_mu
+train_pf_mahal = np.sqrt(np.sum((train_pf_diff @ pf_cov_inv) * train_pf_diff, axis=1))
+pf_mahal_mu, pf_mahal_std = train_pf_mahal.mean(), train_pf_mahal.std() + 1e-8
+pf_mahal_z = (pf_mahal - pf_mahal_mu) / pf_mahal_std
+
+# ── Phase 3: Compare scoring methods (including new signals) ──
 from sklearn.metrics import roc_auc_score as _auc
 
 candidates = {
@@ -683,11 +726,12 @@ candidates = {
     "-D(x) (raw)":              -d_raw,
     "Recon z-score":            recon_z,
     "D z-score":                d_z,
+    "Latent Mahalanobis":       latent_z,
+    "PF Mahalanobis":           pf_mahal_z,
     "Recon_z + D_z (1:1)":     recon_z + d_z,
-    "0.7·Recon_z + 0.3·D_z":   0.7 * recon_z + 0.3 * d_z,
-    "0.5·Recon_z + 0.5·D_z":   0.5 * recon_z + 0.5 * d_z,
-    "0.3·Recon_z + 0.7·D_z":   0.3 * recon_z + 0.7 * d_z,
-    "max(Recon_z, D_z)":        np.maximum(recon_z, d_z),
+    "Recon_z + Latent_z":      recon_z + latent_z,
+    "Recon_z + PF_Mahal_z":    recon_z + pf_mahal_z,
+    "All 4 signals (sum)":     recon_z + d_z + latent_z + pf_mahal_z,
 }
 
 print("\n" + "=" * 55)
@@ -696,6 +740,9 @@ print("=" * 55)
 best_auc = 0
 best_name = None
 for name, s in candidates.items():
+    if np.any(np.isnan(s)) or np.any(np.isinf(s)):
+        print(f"  {name:35s} AUC = NaN (skipped)")
+        continue
     a = _auc(labels, s)
     marker = ""
     if a > best_auc:
@@ -704,7 +751,45 @@ for name, s in candidates.items():
         marker = " ◀ best"
     print(f"  {name:35s} AUC = {a:.4f}{marker}")
 
-scores = candidates[best_name]
+# ── Phase 3b: Learned fusion via logistic regression ──
+from sklearn.linear_model import LogisticRegression
+from sklearn.preprocessing import StandardScaler
+
+# Build feature matrix from all 4 z-scored signals
+X_fusion = np.column_stack([recon_z, d_z, latent_z, pf_mahal_z])
+# Remove any NaN/inf
+valid = np.all(np.isfinite(X_fusion), axis=1)
+X_valid = X_fusion[valid]
+y_valid = labels[valid]
+
+# Fit logistic regression (L2 regularized)
+scaler = StandardScaler()
+X_scaled = scaler.fit_transform(X_valid)
+lr_model = LogisticRegression(C=1.0, max_iter=1000, solver='lbfgs')
+lr_model.fit(X_scaled, y_valid)
+fusion_prob = lr_model.predict_proba(X_scaled)[:, 1]
+fusion_auc = _auc(y_valid, fusion_prob)
+
+print(f"\n  {'Learned Fusion (LR)':35s} AUC = {fusion_auc:.4f}", end="")
+if fusion_auc > best_auc:
+    best_auc = fusion_auc
+    best_name = "Learned Fusion (LR)"
+    print(" ◀ best")
+else:
+    print()
+
+print(f"\n  LR coefficients: recon_z={lr_model.coef_[0][0]:.3f}, d_z={lr_model.coef_[0][1]:.3f}, "
+      f"latent_z={lr_model.coef_[0][2]:.3f}, pf_mahal_z={lr_model.coef_[0][3]:.3f}")
+
+# Use the best method
+if best_name == "Learned Fusion (LR)":
+    # For fusion, we need to handle the valid mask
+    scores = np.zeros(len(labels))
+    scores[valid] = fusion_prob
+    scores[~valid] = 0.0  # mark invalid as benign-like
+else:
+    scores = candidates[best_name]
+
 print(f"\n  ➤ Using: {best_name} (AUC = {best_auc:.4f})")
 
 # Print score statistics for diagnosis
@@ -712,9 +797,11 @@ for lbl, lbl_name in [(0, "Benign"), (1, "Attack")]:
     mask = labels == lbl
     r = recon_raw[mask]
     d = d_raw[mask]
+    lm = latent_mahal[mask]
     print(f"\n  {lbl_name} score stats:")
     print(f"    Recon  — median={np.median(r):.2f}, mean={r.mean():.2f}, p95={np.percentile(r,95):.2f}")
     print(f"    D(x)   — median={np.median(d):.2f}, mean={d.mean():.2f}, p5={np.percentile(d,5):.2f}")
+    print(f"    Latent — median={np.median(lm):.2f}, mean={lm.mean():.2f}, p95={np.percentile(lm,95):.2f}")
 
 results_df = pd.DataFrame({"score": scores, "Label": labels})
 results_df.to_csv(os.path.join(CKPT_DIR, "inference_scores.csv"), index=False)

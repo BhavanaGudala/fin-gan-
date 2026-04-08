@@ -17,7 +17,7 @@ dropout: 0.2
 
 # Training
 n_critic: 5
-gp_lambda: 20
+gp_lambda: 10
 patience: 40
 recon_weight: 100.0
 
