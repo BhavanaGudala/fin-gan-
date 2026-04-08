@@ -65,6 +65,7 @@ import time
 if torch.cuda.is_available():
     device = torch.device("cuda")
     print(f"Using GPU: {torch.cuda.get_device_name(0)}")
+    torch.backends.cudnn.benchmark = True  # auto-tune for fixed input shapes
 elif hasattr(torch, 'xpu') and torch.xpu.is_available():
     device = torch.device("xpu")
     print("Using Intel XPU")
@@ -81,7 +82,7 @@ CONFIG = {
     "test_csv": os.path.join(DATA_DIR, "merged.csv"),
     "label_column": "Label",
     "seq_len": 20,
-    "batch_size": 512,
+    "batch_size": 1024,
     "epochs": 200,
     "lr_G": 1e-4,
     "lr_D": 5e-5,
@@ -216,7 +217,18 @@ class FlowDataset(Dataset):
     def __len__(self):
         return len(self.data) - self.seq_len + 1
 
+    def to_device(self, device):
+        """Pre-load entire dataset to GPU to eliminate CPU→GPU transfer."""
+        self._device = device
+        self._data_tensor = torch.tensor(self.data, device=device)
+        self._label_tensor = torch.tensor(self.labels, device=device)
+        return self
+
     def __getitem__(self, idx):
+        if hasattr(self, '_data_tensor'):
+            x = self._data_tensor[idx:idx + self.seq_len]
+            y = self._label_tensor[idx + self.seq_len - 1]
+            return x, y
         x = self.data[idx:idx + self.seq_len]
         y = self.labels[idx + self.seq_len - 1]
         return torch.tensor(x), torch.tensor(y)
@@ -224,7 +236,10 @@ class FlowDataset(Dataset):
 
 def get_loader(csv, seq_len, label, batch, shuffle, train_mode, norm_path=None):
     ds = FlowDataset(csv, seq_len, label, train_mode, norm_path)
-    nw = 2 if torch.cuda.is_available() else 0
+    if device.type == 'cuda':
+        ds.to_device(device)
+        return DataLoader(ds, batch_size=batch, shuffle=shuffle), ds
+    nw = 4 if torch.cuda.is_available() else 0
     return DataLoader(ds, batch_size=batch, shuffle=shuffle, num_workers=nw, pin_memory=True, persistent_workers=(nw > 0)), ds
 
 # %% [markdown]

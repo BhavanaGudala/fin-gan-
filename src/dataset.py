@@ -121,11 +121,26 @@ class FlowDataset(Dataset):
     def __len__(self):
         return len(self.data) - self.seq_len + 1
 
+    def to_device(self, device):
+        """Pre-load entire dataset to GPU to eliminate CPU→GPU transfer."""
+        self._device = device
+        self._data_tensor = torch.tensor(self.data, device=device)
+        self._label_tensor = torch.tensor(self.labels, device=device)
+        return self
+
     def __getitem__(self, idx):
+        if hasattr(self, '_data_tensor'):
+            x = self._data_tensor[idx:idx + self.seq_len]
+            y = self._label_tensor[idx + self.seq_len - 1]
+            return x, y
         x = self.data[idx:idx + self.seq_len]
         y = self.labels[idx + self.seq_len - 1]
         return torch.tensor(x), torch.tensor(y)
 
-def get_loader(csv, seq_len, label, batch, shuffle, train_mode):
+def get_loader(csv, seq_len, label, batch, shuffle, train_mode, device=None):
     ds = FlowDataset(csv, seq_len, label, train_mode)
+    if device is not None and device.type == 'cuda':
+        ds.to_device(device)
+        # Data already on GPU — no pin_memory or workers needed
+        return DataLoader(ds, batch_size=batch, shuffle=shuffle), ds
     return DataLoader(ds, batch_size=batch, shuffle=shuffle), ds

@@ -18,15 +18,19 @@ hidden_dim = cfg.get("hidden_dim", 64)
 num_layers = cfg.get("num_layers", 2)
 dropout = cfg.get("dropout", 0.2)
 
+# Auto-tune cuDNN kernels
+if torch.cuda.is_available():
+    torch.backends.cudnn.benchmark = True
+
 # Load test data
 loader, _ = get_loader(cfg["test_csv"], cfg["seq_len"],
                        cfg["label_column"], cfg["batch_size"],
-                       False, train_mode=False)
+                       False, train_mode=False, device=device)
 
 # Load training data (benign only) for baseline computation
 train_loader, _ = get_loader(cfg["train_csv"], cfg["seq_len"],
                              cfg["label_column"], cfg["batch_size"],
-                             False, train_mode=True)
+                             False, train_mode=True, device=device)
 
 feat_dim = loader.dataset.data.shape[1]
 

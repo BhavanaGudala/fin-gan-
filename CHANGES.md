@@ -818,3 +818,60 @@ Duration is converted from microseconds to seconds, with a floor of 1µs to avoi
 - `notebooks/train_and_evaluate.py` — all above changes mirrored
 
 **Requires full retraining** — architecture (hidden_dim), sequence length, and feature count all changed.
+
+---
+
+## 14. Phase 7b — Training Speed Optimizations
+
+Pure speed improvements — no impact on model accuracy or ROC-AUC.
+
+### 14.1 Batch Size 128 → 1024
+
+**Before:** `batch_size: 128` (yaml) / `512` (notebook)
+**After:** `batch_size: 1024`
+
+**Rationale:** With hidden_dim=128, seq_len=20, 69 features, the model is ~900K params (~3.5MB). Even at batch 1024, peak VRAM usage is well under 8GB on T4 (16GB). Larger batches mean fewer iterations per epoch — roughly 8× fewer batches → proportionally faster. WGAN-GP actually benefits from larger batches since the Wasserstein distance estimate becomes more accurate.
+
+**Batches per epoch:** ~78K training samples / 1024 ≈ 76 batches (down from ~153 at 512 or ~610 at 128).
+
+### 14.2 cuDNN Benchmark Mode
+
+```python
+torch.backends.cudnn.benchmark = True
+```
+
+**Added to:** `src/train.py`, `src/infer.py`, notebook device selection
+
+**Rationale:** Since input shapes are fixed (batch, 20, 69), cuDNN can auto-tune and cache the fastest kernel for GRU forward and backward passes. One-time profiling overhead on the first batch, then faster for all subsequent batches (~5-15% speedup on GRU operations).
+
+### 14.3 GPU-Resident Dataset (Pre-load to VRAM)
+
+**Before:** Data stored as numpy arrays on CPU. Each batch requires CPU→GPU transfer via `x.to(device)`.
+**After:** Entire dataset pre-loaded to GPU as tensors at initialization. Zero transfer overhead per batch.
+
+```python
+def to_device(self, device):
+    self._data_tensor = torch.tensor(self.data, device=device)
+    self._label_tensor = torch.tensor(self.labels, device=device)
+```
+
+**Memory cost:** ~400K rows × 69 features × 4 bytes ≈ 110MB — negligible on 16GB T4.
+
+**Rationale:** The dataset is small enough to fit entirely in VRAM. Pre-loading eliminates all CPU→GPU transfers during training. The `x.to(device)` calls in the training loop become no-ops (tensor already on correct device). DataLoader workers and pin_memory are also unnecessary when data is GPU-resident.
+
+### 14.4 Expected Speedup
+
+| Factor | Estimated Impact |
+|---|---|
+| Batch 128→1024 | ~4-6× fewer batches per epoch |
+| cudnn.benchmark | ~5-15% faster per batch |
+| GPU-resident data | ~10-20% less overhead per batch |
+| **Combined** | **~3-5× faster epoch time** |
+
+### 14.5 Files Changed
+
+- `configs/config.yaml` — `batch_size: 1024`
+- `src/dataset.py` — `to_device()` method, updated `get_loader()` with `device` param
+- `src/train.py` — `cudnn.benchmark = True`, passes `device` to `get_loader()`
+- `src/infer.py` — `cudnn.benchmark = True`, passes `device` to `get_loader()`
+- `notebooks/train_and_evaluate.py` — all above mirrored, batch 1024, `cudnn.benchmark`

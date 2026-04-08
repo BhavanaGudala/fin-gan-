@@ -14,6 +14,10 @@ sys.path.insert(0, os.path.join(ROOT, "src"))  # ensure src imports work
 from dataset import get_loader
 from model import Generator, Discriminator
 
+# Auto-tune cuDNN kernels for fixed input shapes (seq_len, feat_dim)
+if torch.cuda.is_available():
+    torch.backends.cudnn.benchmark = True
+
 
 def gradient_penalty(D, real, fake, device):
     alpha = torch.rand(real.size(0), 1, 1).to(device)
@@ -51,7 +55,8 @@ loader, ds = get_loader(
     cfg["label_column"],
     cfg["batch_size"],
     True,
-    train_mode=True
+    train_mode=True,
+    device=device
 )
 
 feat_dim = ds.data.shape[1]
