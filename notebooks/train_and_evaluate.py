@@ -367,6 +367,7 @@ for epoch in range(CONFIG["epochs"]):
             opt_G.step()
             
             epoch_g_loss += g_loss.item()
+            epoch_recon_loss += recon_loss.item()
             g_steps += 1
         
         pbar.set_postfix({
@@ -411,7 +412,7 @@ for epoch in range(CONFIG["epochs"]):
         print(f"\n⚡ Early stopping at epoch {epoch+1}")
         break
 
-print(f"\nTraining complete! Best D loss: {best_loss:.6f}")
+print(f"\nTraining complete! Best recon loss: {best_recon:.6f}")
 print(f"Total time: {sum(history['epoch_time']):.0f}s ({sum(history['epoch_time'])/60:.1f} min)")
 
 # %% [markdown]
