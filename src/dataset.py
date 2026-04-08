@@ -36,7 +36,10 @@ class FlowDataset(Dataset):
 
         # Handle both object dtype and pandas StringDtype (ArrowDtype etc.)
         if pd.api.types.is_string_dtype(df[label_col]) or df[label_col].dtype == object:
+            raw_labels = df[label_col].values.copy()  # preserve original strings
             df[label_col] = (df[label_col] != "Benign").astype(int)
+        else:
+            raw_labels = np.where(df[label_col].values == 0, "Benign", "Attack")
 
         if train_mode:
             benign = df[df[label_col] == 0]
@@ -51,6 +54,7 @@ class FlowDataset(Dataset):
             n_train = int(len(benign) * split_ratio)
             train_idx = indices[:n_train]
             df = benign.iloc[train_idx].reset_index(drop=True)
+            raw_labels = raw_labels[benign.index[train_idx]]
         else:
             # For test: use ALL data (benign + attacks),
             # but exclude training benign to avoid data leakage
@@ -63,9 +67,14 @@ class FlowDataset(Dataset):
             n_train = int(len(benign_df) * split_ratio)
             test_idx = indices[n_train:]
             test_benign = benign_df.iloc[test_idx].reset_index(drop=True)
+            # Preserve raw labels in same order
+            raw_test_benign = raw_labels[benign_df.index[test_idx]]
+            raw_attack = raw_labels[attack_df.index]
+            raw_labels = np.concatenate([raw_test_benign, raw_attack])
             df = pd.concat([test_benign, attack_df], ignore_index=True)
 
         self.labels = df[label_col].values
+        self.raw_labels = raw_labels  # original string labels for per-attack analysis
         df = df.drop(columns=[label_col])
 
         df = df.select_dtypes(include=[np.number])

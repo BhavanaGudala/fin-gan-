@@ -164,27 +164,42 @@ for name, s in candidates.items():
         marker = " ◀ best"
     print(f"  {name:35s} AUC = {a:.4f}{marker}")
 
-# Learned fusion
+# Learned fusion (cross-validated to avoid train-on-test leakage)
+from sklearn.model_selection import StratifiedKFold
+
 X_fusion = np.column_stack([recon_z, d_z, latent_z, pf_mahal_z])
 valid = np.all(np.isfinite(X_fusion), axis=1)
 X_valid, y_valid = X_fusion[valid], labels[valid]
+
+fusion_prob_cv = np.zeros(len(y_valid))
+skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+for fold_train, fold_test in skf.split(X_valid, y_valid):
+    scaler_fold = StandardScaler()
+    X_tr = scaler_fold.fit_transform(X_valid[fold_train])
+    X_te = scaler_fold.transform(X_valid[fold_test])
+    lr_fold = LogisticRegression(C=1.0, max_iter=1000, solver='lbfgs')
+    lr_fold.fit(X_tr, y_valid[fold_train])
+    fusion_prob_cv[fold_test] = lr_fold.predict_proba(X_te)[:, 1]
+
+fusion_auc_cv = roc_auc_score(y_valid, fusion_prob_cv)
+
+# Full-data fit for coefficient inspection
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X_valid)
 lr_model = LogisticRegression(C=1.0, max_iter=1000, solver='lbfgs')
 lr_model.fit(X_scaled, y_valid)
-fusion_prob = lr_model.predict_proba(X_scaled)[:, 1]
-fusion_auc = roc_auc_score(y_valid, fusion_prob)
-print(f"\n  {'Learned Fusion (LR)':35s} AUC = {fusion_auc:.4f}", end="")
-if fusion_auc > best_auc:
-    best_auc = fusion_auc
-    best_name = "Learned Fusion (LR)"
+
+print(f"\n  {'Learned Fusion (5-fold CV)':35s} AUC = {fusion_auc_cv:.4f}", end="")
+if fusion_auc_cv > best_auc:
+    best_auc = fusion_auc_cv
+    best_name = "Learned Fusion (CV)"
     print(" ◀ best")
 else:
     print()
 
-if best_name == "Learned Fusion (LR)":
+if best_name == "Learned Fusion (CV)":
     scores = np.zeros(len(labels))
-    scores[valid] = fusion_prob
+    scores[valid] = fusion_prob_cv
     scores[~valid] = 0.0
 else:
     scores = candidates[best_name]

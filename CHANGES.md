@@ -965,3 +965,123 @@ The LR learns optimal weights for combining signals, automatically down-weightin
 - `src/train.py` — `torch.clamp(gp, max=1.0)` in gradient penalty
 - `src/infer.py` — latent extraction, Mahalanobis distances, learned fusion
 - `notebooks/train_and_evaluate.py` — all above mirrored
+
+### 15.7 Phase 8 Results (Run 11)
+
+Trained 300 epochs on Kaggle T4x2 (DataParallel), batch_size=1024, gp_lambda=10, GP clamp(max=1.0).
+
+| Metric | Phase 7+7b (Run 10) | Phase 8 (Run 11) | Delta |
+|---|---|---|---|
+| **ROC-AUC (Latent Mahalanobis)** | — | **0.9999** | — |
+| **ROC-AUC (PF Mahalanobis)** | — | 0.9989 | — |
+| **ROC-AUC (All 4 signals sum)** | — | 0.9996 | — |
+| **ROC-AUC (Recon_z + D_z)** | 0.9842 | 0.9914 | +0.0072 |
+| **ROC-AUC (Mean MSE raw)** | 0.9162 | 0.9231 | +0.0069 |
+| **ROC-AUC (Learned Fusion LR)** | — | 1.0000* | *leakage |
+| **TPR** | 92.9% | 99.81% | +6.9% |
+| **FPR** | 5.4% | 0.27% | −5.1% |
+| **Accuracy** | 93.0% | 99.80% | +6.8% |
+| **F1** | — | 0.9990 | — |
+
+*Learned Fusion AUC=1.0000 was inflated due to train-on-test data leakage (see Phase 9).
+
+**Confusion matrix (Run 11, best threshold):**
+| | Predicted Normal | Predicted Attack |
+|---|---|---|
+| **Actual Normal** | 19,495 (TN) | 53 (FP) |
+| **Actual Attack** | 640 (FN) | 332,900 (TP) |
+
+**LR fusion coefficients (Run 11):**
+| Signal | Coefficient |
+|---|---|
+| `latent_z` | 19.652 (dominant) |
+| `d_z` | 1.431 |
+| `recon_z` | −0.448 |
+| `pf_mahal_z` | −0.605 |
+
+**GP drift (Run 11):** 0.1 → 0.82 over 300 epochs — **worse** than Run 10 (0.05→0.32). Reducing gp_lambda from 20→10 weakened the penalty, allowing more drift. D(real)≈23, D(fake)≈−24 — critic scores diverging rather than converging.
+
+**Key takeaway:** Latent Mahalanobis alone (AUC=0.9999) is a legitimate unsupervised signal that far exceeds the paper's 0.9963. However, the evaluation code had two critical bugs discovered post-run (fixed in Phase 9).
+
+---
+
+## 16. Phase 9 — Evaluation Bug Fixes (Post-Run 11)
+
+Run 11 produced exceptional headline numbers (AUC=1.0, Accuracy=99.8%), but post-run analysis revealed two evaluation bugs that inflated or corrupted reported metrics, plus a worsened GP drift issue. Phase 9 fixes the evaluation pipeline without changing the model or training code.
+
+### 16.1 Bug Fix: Learned Fusion Data Leakage
+
+**Problem:** The `LogisticRegression` was trained on the **entire** test set (all 4 z-scored signals + binary labels), then evaluated on the **same** test set. This is textbook data leakage — the classifier memorizes the test labels, producing AUC=1.0000 regardless of signal quality. The LR coefficients (`latent_z=19.652`) reflect overfitting to the test distribution, not generalizable fusion weights.
+
+**Fix:** Replaced single-fit LR with **5-fold Stratified Cross-Validation**:
+```python
+skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+oof_proba = np.zeros(len(y))
+for train_ix, val_ix in skf.split(X, y):
+    lr_fold = LogisticRegression(C=1.0, max_iter=1000, solver="lbfgs")
+    lr_fold.fit(X[train_ix], y[train_ix])
+    oof_proba[val_ix] = lr_fold.predict_proba(X[val_ix])[:, 1]
+```
+
+Each fold trains on 80% of the test set and predicts the held-out 20%. No sample ever sees its own label during training. The resulting out-of-fold AUC is a fair estimate of fusion quality. A full-data refit is retained only for coefficient inspection (not for scoring).
+
+**Impact:** The reported "Learned Fusion (CV)" AUC will drop from 1.0000 to a realistic value (expected ~0.9999 given the strength of `latent_z` alone). All other unsupervised metrics (Latent Mahalanobis, PF Mahalanobis, signal sums) are unaffected — they never used test labels.
+
+### 16.2 Bug Fix: Per-Attack Label Misalignment
+
+**Problem:** The per-attack detection code re-read the **full** CSV file to obtain original string labels (e.g., "DrDoS_DNS", "LDAP"), then created `window_labels` from all rows. But the test_loader only uses the **20% held-out benign + all attacks** split. This caused a size mismatch:
+
+| | Scores array | Label array |
+|---|---|---|
+| **Benign count** | 19,548 (correct, from split) | 81,167 (wrong, from full CSV) |
+| **Total windows** | 353,088 | ~414,000+ |
+
+The misaligned arrays meant 61,619 attack windows were incorrectly counted as benign, producing garbage per-attack detection rates.
+
+**Root cause:** `FlowDataset` discarded original string labels during the binary conversion (`(df[label_col] != "Benign").astype(int)`), so the per-attack code had to re-read the CSV — but it read the **unsplit** CSV.
+
+**Fix (two parts):**
+
+1. **`FlowDataset` now preserves `raw_labels`** — original string labels are saved before binary conversion and tracked through the train/test split:
+```python
+if pd.api.types.is_string_dtype(df[label_col]) or df[label_col].dtype == object:
+    raw_labels = df[label_col].values.copy()  # preserve before conversion
+    df[label_col] = (df[label_col] != "Benign").astype(int)
+else:
+    raw_labels = np.where(df[label_col].values == 0, "Benign", "Attack")
+```
+The `raw_labels` array is sliced identically to the data through both train/test branches, so `self.raw_labels` is always aligned with `self.labels` and `self.data`.
+
+2. **Per-attack code uses `test_ds.raw_labels`** instead of re-reading the CSV:
+```python
+sample_labels = test_ds.raw_labels  # already aligned with test split
+window_labels = sample_labels[seq_len - 1:]  # match sliding window offset
+```
+
+**Impact:** Per-attack detection rates will now be accurate. Previous per-attack numbers from Run 11 were meaningless due to the misalignment.
+
+### 16.3 GP Drift Observation
+
+**Not fixed in Phase 9** — documented for future work.
+
+GP drift worsened in Run 11: 0.1→0.82 (vs 0.05→0.32 in Run 10). Lowering `gp_lambda` from 20→10 did the opposite of what was intended — the weaker penalty allowed the critic gradient norms to drift further from 1.0. The GP clamp (`max=1.0`) was ineffective since raw GP values stayed below 1.0 (drift is gradual, not spiky).
+
+Despite the drift, the latent representations are clearly excellent (AUC=0.9999). The encoder learned useful structure even with a poorly-regulated critic. Future phases may revert `gp_lambda` to 20 or try alternative critic regularization.
+
+### 16.4 Files Changed
+
+- `src/dataset.py` — Added `self.raw_labels` preserving original string labels through train/test splits
+- `src/infer.py` — LR fusion replaced with 5-fold StratifiedKFold CV
+- `notebooks/train_and_evaluate.py` — All above mirrored: `raw_labels` in FlowDataset, LR fusion CV, per-attack uses `test_ds.raw_labels`
+
+### 16.5 Results Summary Table
+
+| Phase | Run | Best AUC | Scoring Method | Key Change |
+|---|---|---|---|---|
+| Phase 0 (baseline) | 1 | 0.4670 | Mean MSE | Original model |
+| Phase 2 | 2 | 0.7930 | Mean MSE | AE-WGAN-GP + scoring fix |
+| Phase 5 | 5 | 0.9300 | Mean MSE | Data pipeline overhaul |
+| Phase 6 | 8 | 0.9833 | Mean MSE | Critic stability |
+| Phase 7+7b | 10 | 0.9842 | Recon_z + D_z | Capacity + rate features + speed |
+| Phase 8 | 11 | **0.9999** | Latent Mahalanobis | Scoring overhaul (unsupervised) |
+| Phase 9 | — | pending | — | Evaluation bug fixes (no retraining) |

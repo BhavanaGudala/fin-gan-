@@ -142,7 +142,10 @@ class FlowDataset(Dataset):
 
         # Convert string labels to binary (handles both object and StringDtype)
         if pd.api.types.is_string_dtype(df[label_col]) or df[label_col].dtype == object:
+            raw_labels = df[label_col].values.copy()  # preserve original strings
             df[label_col] = (df[label_col] != "Benign").astype(int)
+        else:
+            raw_labels = np.where(df[label_col].values == 0, "Benign", "Attack")
 
         if train_mode:
             benign = df[df[label_col] == 0]
@@ -154,6 +157,7 @@ class FlowDataset(Dataset):
             n_train = int(len(benign) * split_ratio)
             train_idx = indices[:n_train]
             df = benign.iloc[train_idx].reset_index(drop=True)
+            raw_labels = raw_labels[benign.index[train_idx]]
         else:
             # Test: held-out 20% benign + all attacks
             benign_mask = df[label_col] == 0
@@ -164,9 +168,14 @@ class FlowDataset(Dataset):
             n_train = int(len(benign_df) * split_ratio)
             test_idx = indices[n_train:]
             test_benign = benign_df.iloc[test_idx].reset_index(drop=True)
+            # Preserve raw labels in same order
+            raw_test_benign = raw_labels[benign_df.index[test_idx]]
+            raw_attack = raw_labels[attack_df.index]
+            raw_labels = np.concatenate([raw_test_benign, raw_attack])
             df = pd.concat([test_benign, attack_df], ignore_index=True)
 
         self.labels = df[label_col].values
+        self.raw_labels = raw_labels  # original string labels for per-attack analysis
         df = df.drop(columns=[label_col])
 
         df = df.select_dtypes(include=[np.number])
@@ -751,9 +760,10 @@ for name, s in candidates.items():
         marker = " ◀ best"
     print(f"  {name:35s} AUC = {a:.4f}{marker}")
 
-# ── Phase 3b: Learned fusion via logistic regression ──
+# ── Phase 3b: Learned fusion via logistic regression (cross-validated) ──
 from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import StratifiedKFold
 
 # Build feature matrix from all 4 z-scored signals
 X_fusion = np.column_stack([recon_z, d_z, latent_z, pf_mahal_z])
@@ -762,18 +772,29 @@ valid = np.all(np.isfinite(X_fusion), axis=1)
 X_valid = X_fusion[valid]
 y_valid = labels[valid]
 
-# Fit logistic regression (L2 regularized)
+# Cross-validated fusion to avoid train-on-test leakage
+fusion_prob_cv = np.zeros(len(y_valid))
+skf = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+for fold_train, fold_test in skf.split(X_valid, y_valid):
+    scaler_fold = StandardScaler()
+    X_tr = scaler_fold.fit_transform(X_valid[fold_train])
+    X_te = scaler_fold.transform(X_valid[fold_test])
+    lr_fold = LogisticRegression(C=1.0, max_iter=1000, solver='lbfgs')
+    lr_fold.fit(X_tr, y_valid[fold_train])
+    fusion_prob_cv[fold_test] = lr_fold.predict_proba(X_te)[:, 1]
+
+fusion_auc_cv = _auc(y_valid, fusion_prob_cv)
+
+# Also fit on full data for coefficient inspection and final scoring
 scaler = StandardScaler()
 X_scaled = scaler.fit_transform(X_valid)
 lr_model = LogisticRegression(C=1.0, max_iter=1000, solver='lbfgs')
 lr_model.fit(X_scaled, y_valid)
-fusion_prob = lr_model.predict_proba(X_scaled)[:, 1]
-fusion_auc = _auc(y_valid, fusion_prob)
 
-print(f"\n  {'Learned Fusion (LR)':35s} AUC = {fusion_auc:.4f}", end="")
-if fusion_auc > best_auc:
-    best_auc = fusion_auc
-    best_name = "Learned Fusion (LR)"
+print(f"\n  {'Learned Fusion (5-fold CV)':35s} AUC = {fusion_auc_cv:.4f}", end="")
+if fusion_auc_cv > best_auc:
+    best_auc = fusion_auc_cv
+    best_name = "Learned Fusion (CV)"
     print(" ◀ best")
 else:
     print()
@@ -781,12 +802,11 @@ else:
 print(f"\n  LR coefficients: recon_z={lr_model.coef_[0][0]:.3f}, d_z={lr_model.coef_[0][1]:.3f}, "
       f"latent_z={lr_model.coef_[0][2]:.3f}, pf_mahal_z={lr_model.coef_[0][3]:.3f}")
 
-# Use the best method
-if best_name == "Learned Fusion (LR)":
-    # For fusion, we need to handle the valid mask
+# Use the best method — for CV fusion, use the cross-validated probabilities
+if best_name == "Learned Fusion (CV)":
     scores = np.zeros(len(labels))
-    scores[valid] = fusion_prob
-    scores[~valid] = 0.0  # mark invalid as benign-like
+    scores[valid] = fusion_prob_cv
+    scores[~valid] = 0.0
 else:
     scores = candidates[best_name]
 
@@ -900,15 +920,12 @@ print("\n" + "=" * 60)
 print("  Per-Attack-Type Detection Rates")
 print("=" * 60)
 
-# Re-read CSV to get original string labels
-raw_df = pd.read_csv(CONFIG["test_csv"])
-label_col = CONFIG["label_column"]
+# Use raw_labels from the test dataset (already aligned with the 80/20 split)
 seq_len = CONFIG["seq_len"]
-
-# Get the label for each window (label of the last timestep)
-raw_labels = raw_df[label_col].values
-window_labels = [raw_labels[i + seq_len - 1] for i in range(len(raw_labels) - seq_len + 1)]
-window_labels = np.array(window_labels[:len(scores)])  # align with scored windows
+raw_lbl = test_ds.raw_labels
+# Window label = label of last timestep in each window
+window_labels = np.array([raw_lbl[i + seq_len - 1] for i in range(len(raw_lbl) - seq_len + 1)])
+window_labels = window_labels[:len(scores)]  # align with scored windows
 
 attack_types = sorted(set(window_labels) - {"Benign"})
 
