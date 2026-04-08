@@ -10,12 +10,12 @@ device: cpu
 
 # Model architecture
 noise_dim: 32
-hidden_dim: 128
+hidden_dim: 64
 num_layers: 2
 dropout: 0.2
 
 # Training
 n_critic: 5
 gp_lambda: 10
-patience: 15
-recon_weight: 1.0
+patience: 20
+recon_weight: 100.0

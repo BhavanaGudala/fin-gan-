@@ -359,11 +359,90 @@ opt_G.step()
 
 ## Summary of Phase 1 + 2 Impact
 
-| Metric | Phase 1 Only | Phase 2 (Full) | Paper Baseline |
+| Metric | Phase 1 Only | Phase 2 (initial) | Paper Baseline |
 |---|---|---|---|
-| **ROC-AUC** | 0.789 | ~0.92-0.95 (expected) | 0.9963 (self-attention, TCN) |
-| **Syn detection** | 3.8% | ~80-90% (expected) | 94.83% |
-| **Benign TNR** | 72.9% | ~80-85% (expected) | ~96-98% |
+| **ROC-AUC** | 0.789 | 0.793 | 0.9963 (self-attention, TCN) |
+| **Syn detection** | 3.8% | 3.1% | 94.83% |
+| **Benign TNR** | 72.9% | 73.1% | ~96-98% |
 | **Key changes** | Critic score removed | + Gradient clipping, recon early stop, weight tuning, more epochs | TCN/self-attention, LSTM baseline |
 
-**Note:** Phase 2 uses the GRU-based AE-WGAN-GP architecture, which is fundamentally different from the paper's TCN/Self-Attention approach. Phase 2 brings the GRU approach closer to the paper's performance by fixing training dynamics.
+**Phase 2 diagnosis:** The initial `recon_weight=1.0` barely improved results because the critic loss (~60) completely dominated the generator objective. With `recon_loss ≈ 0.80`, the reconstruction term was only ~1.3% of total generator loss. The autoencoder was not learning to reconstruct — it was learning to fool the critic.
+
+---
+
+## 7. Phase 2b — Reconstruction-Dominant Training
+
+After Phase 2's marginal improvement (0.789 → 0.793), analysis of the generator loss composition revealed the core issue: the adversarial critic loss was ~75× larger than the reconstruction loss, making the autoencoder optimize almost exclusively to fool the critic rather than to faithfully reconstruct benign data.
+
+### 7.1 Reconstruction Weight (1.0 → 100.0)
+
+**Before:** `recon_weight: 1.0` → `g_loss = critic_loss + 1.0 × recon_loss`
+
+**After:** `recon_weight: 100.0` → `g_loss = critic_loss + 100.0 × recon_loss`
+
+**Why:** At the best checkpoint (epoch 27, recon_weight=1.0):
+- `critic_loss ≈ 60` (from `-D(G(x))`)
+- `recon_loss ≈ 0.80` (MSE between `x` and `G(x)`)
+- **Old:** `g_loss = 60 + 1.0 × 0.80 = 60.80` → reconstruction is only **1.3%** of gradient signal
+- **New:** `g_loss = 60 + 100 × 0.80 = 140` → reconstruction is **57%** of gradient signal
+
+With `recon_weight=100`, the generator receives meaningful gradient from the reconstruction objective. This means the autoencoder will actively learn to minimize MSE on benign data, resulting in:
+- Lower reconstruction error for benign flows → better true negative rate
+- Higher reconstruction error for attack flows → better true positive rate
+- Better class separation in the anomaly score distribution
+
+The adversarial term still contributes — it regularizes the autoencoder to produce outputs that lie on the benign data manifold (not just minimize pixel-wise error). But it no longer drowns out the reconstruction signal.
+
+### 7.2 Reduced Hidden Dimension (128 → 64)
+
+**Before:** `hidden_dim: 128` → latent bottleneck: 77 features × 10 timesteps → 128-dim (compression ratio ~6:1)
+
+**After:** `hidden_dim: 64` → latent bottleneck: 77 features × 10 timesteps → 64-dim (compression ratio ~12:1)
+
+**Why:** The autoencoder's anomaly detection ability depends on the **information bottleneck** being tight enough that it cannot losslessly encode arbitrary input — only patterns it has been trained on (benign flows). With `hidden_dim=128`, the bottleneck was too wide:
+- The encoder had enough capacity to partially encode attack patterns by memorizing general-purpose compression strategies
+- Attack reconstruction errors were not sufficiently higher than benign reconstruction errors
+- This directly hurt the ROC-AUC because the reconstruction-based anomaly score couldn't separate the classes
+
+With `hidden_dim=64`:
+- The encoder must learn a more selective compression — it can only represent the 64 most important dimensions of benign traffic
+- Attack patterns that don't align with these learned dimensions will produce significantly higher reconstruction error
+- This also reduces total parameters: Generator 386,893 → ~105K, Discriminator 456,450 → ~125K
+
+**Trade-off:** Too small a bottleneck would also degrade benign reconstruction (increasing false positives). The 64-dim bottleneck with 77 input features provides ~1:1 compression at each timestep, which is a reasonable lower bound for this dataset.
+
+### 7.3 Increased Patience (15 → 20)
+
+**Before:** `patience: 15`  
+**After:** `patience: 20`
+
+**Why:** With the tighter bottleneck (64 vs 128) and the shifted loss balance (reconstruction now dominant), the model needs more epochs to converge because:
+1. The 64-dim bottleneck is harder to optimize — fewer parameters means the loss landscape has fewer easy paths
+2. The 100× reconstruction weight changes the gradient dynamics — the model must re-learn a different balance between the two objectives
+3. Recon loss improvements may come in small, intermittent drops rather than steady decline
+
+Patience of 20 gives the model enough runway to find these improvements without stopping prematurely.
+
+### 7.4 Fixed "Best Epoch" Display
+
+**Before:** `history['epoch'][np.argmin(history['d_loss'])]` — showed epoch with lowest critic loss.  
+**After:** `history['epoch'][np.argmin(history['recon_loss'])]` — shows epoch with lowest reconstruction loss.
+
+**Why:** The best checkpoint is now selected by reconstruction loss, so the display should match. The old code reported epoch 11 (best critic loss) when the actual best model was saved at epoch 27 (best recon loss).
+
+---
+
+## Summary of All Phases
+
+| Metric | Baseline (v0) | Phase 1 | Phase 2a | Phase 2b | Paper |
+|---|---|---|---|---|---|
+| **ROC-AUC** | 0.467 | 0.789 | 0.793 | TBD | 0.9963 |
+| **Anomaly Score** | 0.9·recon + 0.1·(-D) | recon only | recon only | recon only | D(x) |
+| **Early Stop Metric** | critic loss | critic loss | recon loss | recon loss | — |
+| **recon_weight** | 10.0 | 10.0 | 1.0 | **100.0** | — |
+| **hidden_dim** | 128 | 128 | 128 | **64** | — |
+| **Grad clipping** | no | no | yes (1.0) | yes (1.0) | — |
+| **patience** | 10 | 10 | 15 | **20** | — |
+| **Architecture** | GRU AE-WGAN-GP | same | same | same | TCN/SA WGAN |
+
+**Note:** Phase 2b uses the GRU-based AE-WGAN-GP architecture, which is fundamentally different from the paper's TCN/Self-Attention approach. The changes focus on making the autoencoder paradigm work correctly by ensuring the reconstruction objective actually drives learning.

@@ -84,13 +84,13 @@ CONFIG = {
     "epochs": 100,
     "lr": 1e-4,
     "noise_dim": 32,
-    "hidden_dim": 128,
+    "hidden_dim": 64,
     "num_layers": 2,
     "dropout": 0.2,
     "n_critic": 5,
     "gp_lambda": 10,
-    "patience": 15,
-    "recon_weight": 1.0,
+    "patience": 20,
+    "recon_weight": 100.0,
 }
 
 print("Configuration:")
@@ -665,7 +665,7 @@ print(f"""
   Recall:           {recall_score(labels, y_pred):.4f}
   F1-Score:         {f1_score(labels, y_pred):.4f}
   
-  Best epoch:       {history['epoch'][np.argmin(history['d_loss'])]}
+  Best epoch:       {history['epoch'][np.argmin(history['recon_loss'])]}
   Total train time: {sum(history['epoch_time']):.0f}s ({sum(history['epoch_time'])/60:.1f} min)
   
   Checkpoints saved to: {CKPT_DIR}/
