@@ -1,5 +1,6 @@
 import torch
 import torch.nn as nn
+from torch.nn.utils import spectral_norm
 
 
 class Generator(nn.Module):
@@ -54,7 +55,8 @@ class Discriminator(nn.Module):
     """
     Discriminator (WGAN critic): scores how 'real' a network flow sequence is.
     Uses a 2-layer bidirectional GRU with attention pooling, LayerNorm,
-    and Dropout. No sigmoid (Wasserstein objective).
+    Dropout, and spectral normalization on the output layer.
+    No sigmoid (Wasserstein objective).
     """
     def __init__(self, in_dim, hidden, num_layers=2, dropout=0.2):
         super().__init__()
@@ -69,7 +71,7 @@ class Discriminator(nn.Module):
         self.norm = nn.LayerNorm(hidden * 2)
         self.dropout = nn.Dropout(dropout)
         self.attention = AttentionPooling(hidden * 2)
-        self.fc = nn.Linear(hidden * 2, 1)
+        self.fc = spectral_norm(nn.Linear(hidden * 2, 1))
 
     def forward(self, x):
         h, _ = self.gru(x)              # (batch, seq_len, hidden*2)

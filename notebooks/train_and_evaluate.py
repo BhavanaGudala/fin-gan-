@@ -48,6 +48,7 @@ import torch
 import torch.nn as nn
 from torch import optim
 from torch.utils.data import Dataset, DataLoader
+from torch.nn.utils import spectral_norm
 
 import pandas as pd
 import numpy as np
@@ -81,15 +82,16 @@ CONFIG = {
     "label_column": "Label",
     "seq_len": 10,
     "batch_size": 512,
-    "epochs": 100,
-    "lr": 1e-4,
+    "epochs": 150,
+    "lr_G": 1e-4,
+    "lr_D": 5e-5,
     "noise_dim": 32,
     "hidden_dim": 64,
     "num_layers": 2,
     "dropout": 0.2,
     "n_critic": 5,
-    "gp_lambda": 10,
-    "patience": 20,
+    "gp_lambda": 20,
+    "patience": 25,
     "recon_weight": 100.0,
 }
 
@@ -262,7 +264,7 @@ class Discriminator(nn.Module):
         self.norm = nn.LayerNorm(hidden * 2)
         self.dropout = nn.Dropout(dropout)
         self.attention = AttentionPooling(hidden * 2)
-        self.fc = nn.Linear(hidden * 2, 1)
+        self.fc = spectral_norm(nn.Linear(hidden * 2, 1))
 
     def forward(self, x):
         h, _ = self.gru(x)
@@ -332,8 +334,9 @@ def gradient_penalty(D, real, fake, device):
 
 # %%
 # Training loop
-opt_G = optim.Adam(G.parameters(), lr=CONFIG["lr"], betas=(0.5, 0.9))
-opt_D = optim.Adam(D.parameters(), lr=CONFIG["lr"], betas=(0.5, 0.9))
+# Separate learning rates: slower critic to prevent divergence
+opt_G = optim.Adam(G.parameters(), lr=CONFIG["lr_G"], betas=(0.5, 0.9))
+opt_D = optim.Adam(D.parameters(), lr=CONFIG["lr_D"], betas=(0.5, 0.9))
 
 # Mixed precision for GPU speedup
 use_amp = device.type == "cuda"

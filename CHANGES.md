@@ -597,3 +597,111 @@ These changes require **full retraining** (new feature count, new normalization 
 - **Data leakage fix** → benign reconstruction baseline becomes tighter (model hasn't memorised test benign)
 - **Feature selection** → reconstruction error concentrates on 65 informative features instead of 77 (12 of which were pure noise)
 - **Log-transform** → GRU can learn meaningful temporal patterns on properly-scaled features; Syn/UDP-lag distinguishing features (IAT, ACK flags) become well-conditioned
+
+### 11.5 Phase 5 Results
+
+| Metric | Phase 4 | Phase 5 |
+|---|---|---|
+| **ROC-AUC** | 0.792 | **0.9304** |
+| **F1-Score** | — | 0.8999 |
+| **FPR** | — | 1.9% (366/19,558) |
+| **FNR** | — | 18.1% (60,426/333,540) |
+| **Best epoch** | — | 96/100 |
+| **Best recon loss** | 0.53 | 0.709 |
+
+Phase 5's data pipeline overhaul jumped AUC from 0.79 → 0.93 without any model architecture or training changes. However, training plots show **discriminator divergence after epoch ~75**: D loss explodes from -28 → -258. The model survived because `recon_weight=100` makes reconstruction dominate, but the adversarial game broke down.
+
+---
+
+## 12. Phase 6 — Critic Stability Fixes (`src/model.py`, `src/train.py`, `configs/config.yaml`)
+
+Phase 5 revealed classic discriminator collapse: the critic overpowers the generator, D(real) and D(fake) diverge wildly, and the gradient penalty becomes unstable. Four changes address this.
+
+### 12.1 Separate Learning Rates for G and D
+
+**Before:**
+```python
+lr: 0.0001  # same for both
+opt_G = optim.Adam(G.parameters(), lr=cfg["lr"], betas=(0.5, 0.9))
+opt_D = optim.Adam(D.parameters(), lr=cfg["lr"], betas=(0.5, 0.9))
+```
+
+**After:**
+```python
+lr_G: 0.0001
+lr_D: 0.00005  # half the generator's rate
+opt_G = optim.Adam(G.parameters(), lr=lr_G, betas=(0.5, 0.9))
+opt_D = optim.Adam(D.parameters(), lr=lr_D, betas=(0.5, 0.9))
+```
+
+**Rationale:** The critic already trains 5× per G step (`n_critic=5`). On top of that, the same learning rate lets D's parameters move too fast. Halving D's lr slows it down so the generator can keep up. This is a standard WGAN stabilization technique (see Gulrajani et al., 2017).
+
+### 12.2 Increased Gradient Penalty (λ = 10 → 20)
+
+**Before:** `gp_lambda: 10`
+**After:** `gp_lambda: 20`
+
+**Rationale:** The gradient penalty enforces the 1-Lipschitz constraint on the critic. In Phase 5, the GP dropped from ~0.9 to ~0.65 after epoch 75, meaning the critic was violating its Lipschitz bound. Doubling the penalty weight makes constraint violations more expensive, keeping the critic better regularized.
+
+### 12.3 Spectral Normalization on Discriminator FC Layer
+
+**Before:**
+```python
+self.fc = nn.Linear(hidden * 2, 1)
+```
+
+**After:**
+```python
+from torch.nn.utils import spectral_norm
+self.fc = spectral_norm(nn.Linear(hidden * 2, 1))
+```
+
+**Rationale:** Spectral normalization bounds the spectral norm (largest singular value) of the weight matrix to 1, directly constraining the Lipschitz constant of the layer. This provides a complementary mechanism to gradient penalty — GP penalizes Lipschitz violations after the fact, while spectral norm prevents them structurally. Applied only to the final FC layer since the GRU layers are already regularized by LayerNorm + Dropout.
+
+### 12.4 Extended Training Budget (100 → 150 epochs, patience 20 → 25)
+
+**Before:** `epochs: 100`, `patience: 20`
+**After:** `epochs: 150`, `patience: 25`
+
+**Rationale:** In Phase 5, recon loss was still decreasing at epoch 100 (0.71 vs 1.22 at start). The best model at epoch 96 may not have converged. With the critic now stabilized, the generator should be able to train longer without adversarial collapse.
+
+### 12.5 Summary of Config Changes
+
+| Parameter | Phase 5 | Phase 6 | Reason |
+|---|---|---|---|
+| `lr` | 1e-4 (shared) | — | Split into separate rates |
+| `lr_G` | — | 1e-4 | Generator keeps original rate |
+| `lr_D` | — | 5e-5 | Critic trains slower |
+| `gp_lambda` | 10 | 20 | Stronger Lipschitz enforcement |
+| `epochs` | 100 | 150 | More room to converge |
+| `patience` | 20 | 25 | Match longer training |
+| Spectral norm | no | D's FC layer | Structural Lipschitz bound |
+
+### 12.6 Files Changed
+
+- `configs/config.yaml` — new `lr_G`/`lr_D` keys, updated `gp_lambda`, `epochs`, `patience`
+- `src/model.py` — `spectral_norm()` wrap on Discriminator's FC layer
+- `src/train.py` — separate optimizers with `lr_G` and `lr_D`
+- `notebooks/train_and_evaluate.py` — all above changes mirrored
+
+---
+
+## Summary of All Phases
+
+| Metric | Baseline (v0) | Phase 1 | Phase 2a | Phase 2b | Phase 3 | Phase 4 | Phase 5 | Phase 6 | Paper |
+|---|---|---|---|---|---|---|---|---|---|
+| **ROC-AUC** | 0.467 | 0.789 | 0.793 | 0.793 | 0.787 | 0.792 | 0.9304 | TBD | 0.9963 |
+| **Anomaly Score** | 0.9·recon + 0.1·(-D) | mean MSE | mean MSE | mean MSE | z-score top-10 | auto-select | mean MSE | mean MSE | D(x) |
+| **Early Stop Metric** | critic loss | critic loss | recon loss | recon loss | recon loss | recon loss | recon loss | recon loss | — |
+| **recon_weight** | 10.0 | 10.0 | 1.0 | 100.0 | 100.0 | 100.0 | 100.0 | 100.0 | — |
+| **hidden_dim** | 128 | 128 | 128 | 64 | 64 | 64 | 64 | 64 | — |
+| **lr (G / D)** | 1e-4 | 1e-4 | 1e-4 | 1e-4 | 1e-4 | 1e-4 | 1e-4 | 1e-4 / 5e-5 | — |
+| **gp_lambda** | 10 | 10 | 10 | 10 | 10 | 10 | 10 | 20 | — |
+| **Spectral norm** | no | no | no | no | no | no | no | D FC | — |
+| **Grad clipping** | no | no | yes (1.0) | yes (1.0) | yes (1.0) | yes (1.0) | yes (1.0) | yes (1.0) | — |
+| **patience** | 10 | 10 | 15 | 20 | 20 | 20 | 20 | 25 | — |
+| **epochs** | — | — | — | — | — | — | 100 | 150 | — |
+| **Features** | 77 | 77 | 77 | 77 | 77 | 77 | 65 | 65 | — |
+| **Log-transform** | no | no | no | no | no | no | yes | yes | — |
+| **Train/test split** | no | no | no | no | no | no | 80/20 benign | 80/20 benign | — |
+| **Architecture** | GRU AE-WGAN-GP | same | same | same | same | same | same | same + SN | TCN/SA WGAN |

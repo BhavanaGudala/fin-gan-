@@ -69,9 +69,11 @@ recon_weight = cfg.get("recon_weight", 1.0)
 G = Generator(feat_dim, hidden_dim, feat_dim, num_layers, dropout).to(device)
 D = Discriminator(feat_dim, hidden_dim, num_layers, dropout).to(device)
 
-# Optimizers
-opt_G = optim.Adam(G.parameters(), lr=cfg["lr"], betas=(0.5, 0.9))
-opt_D = optim.Adam(D.parameters(), lr=cfg["lr"], betas=(0.5, 0.9))
+# Optimizers — separate learning rates (slower critic to prevent divergence)
+lr_G = cfg.get("lr_G", cfg.get("lr", 1e-4))
+lr_D = cfg.get("lr_D", cfg.get("lr", 5e-5))
+opt_G = optim.Adam(G.parameters(), lr=lr_G, betas=(0.5, 0.9))
+opt_D = optim.Adam(D.parameters(), lr=lr_D, betas=(0.5, 0.9))
 
 # Create checkpoint folder
 os.makedirs("checkpoints", exist_ok=True)
