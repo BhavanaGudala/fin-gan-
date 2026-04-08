@@ -389,7 +389,9 @@ for epoch in range(CONFIG["epochs"]):
     history["g_loss"].append(avg_g)
     history["d_real_mean"].append(avg_real)
     history["d_fake_mean"].append(avg_fake)
-    history["gp_mean"].append(avg_gp)    history[\"recon_loss\"].append(avg_recon)    history["epoch_time"].append(elapsed)
+    history["gp_mean"].append(avg_gp)
+    history["recon_loss"].append(avg_recon)
+    history["epoch_time"].append(elapsed)
     
     print(f"  D: {avg_d:.4f} | G: {avg_g:.4f} | Recon: {avg_recon:.6f} | "
           f"D(real): {avg_real:.4f} | D(fake): {avg_fake:.4f} | GP: {avg_gp:.4f} | Time: {elapsed:.1f}s")
