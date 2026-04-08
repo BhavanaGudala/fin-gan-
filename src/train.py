@@ -62,6 +62,7 @@ dropout = cfg.get("dropout", 0.2)
 n_critic = cfg.get("n_critic", 5)
 gp_lambda = cfg.get("gp_lambda", 10)
 patience = cfg.get("patience", 10)
+recon_weight = cfg.get("recon_weight", 1.0)
 
 # Initialize Models
 # Generator now uses feat_dim as input because it's an Autoencoder
@@ -75,7 +76,7 @@ opt_D = optim.Adam(D.parameters(), lr=cfg["lr"], betas=(0.5, 0.9))
 # Create checkpoint folder
 os.makedirs("checkpoints", exist_ok=True)
 
-best_loss = float("inf")
+best_recon = float("inf")
 patience_counter = 0
 
 
@@ -83,6 +84,7 @@ for epoch in range(cfg["epochs"]):
 
     epoch_d_loss = 0.0
     epoch_g_loss = 0.0
+    epoch_recon_loss = 0.0
 
     for i, (x, _) in enumerate(tqdm(loader, desc=f"Epoch {epoch+1}")):
 
@@ -103,6 +105,7 @@ for epoch in range(cfg["epochs"]):
 
         opt_D.zero_grad()
         d_loss.backward()
+        torch.nn.utils.clip_grad_norm_(D.parameters(), max_norm=1.0)
         opt_D.step()
 
         epoch_d_loss += d_loss.item()
@@ -116,27 +119,30 @@ for epoch in range(cfg["epochs"]):
             # Generator wants to fool discriminator AND reconstruct the input
             critic_loss = -torch.mean(D(fake_x))
             recon_loss = torch.nn.functional.mse_loss(fake_x, x)
-            g_loss = critic_loss + 10.0 * recon_loss
+            g_loss = critic_loss + recon_weight * recon_loss
 
             opt_G.zero_grad()
             g_loss.backward()
+            torch.nn.utils.clip_grad_norm_(G.parameters(), max_norm=1.0)
             opt_G.step()
 
             epoch_g_loss += g_loss.item()
+            epoch_recon_loss += recon_loss.item()
 
     # End of Epoch
     avg_d_loss = epoch_d_loss / len(loader)
     g_updates = max(1, len(loader) // n_critic)
     avg_g_loss = epoch_g_loss / g_updates
-    print(f"Epoch {epoch+1} - Avg Critic Loss: {avg_d_loss:.6f} | Avg G Loss: {avg_g_loss:.6f}")
+    avg_recon = epoch_recon_loss / max(g_updates, 1)
+    print(f"Epoch {epoch+1} - D: {avg_d_loss:.4f} | G: {avg_g_loss:.4f} | Recon: {avg_recon:.6f}")
 
-    # Save best model (early stopping based on critic loss)
-    if avg_d_loss < best_loss:
-        best_loss = avg_d_loss
+    # Save best model (early stopping based on reconstruction loss)
+    if avg_recon < best_recon:
+        best_recon = avg_recon
         torch.save(D.state_dict(), "checkpoints/best_D.pth")
         torch.save(G.state_dict(), "checkpoints/best_G.pth")
         patience_counter = 0
-        print(f"  -> Best model saved at epoch {epoch+1} (loss {best_loss:.6f})")
+        print(f"  -> Best model saved at epoch {epoch+1} (recon {best_recon:.6f})")
     else:
         patience_counter += 1
         print(f"  -> No improvement ({patience_counter}/{patience})")

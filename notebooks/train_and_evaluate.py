@@ -81,7 +81,7 @@ CONFIG = {
     "label_column": "Label",
     "seq_len": 10,
     "batch_size": 512,
-    "epochs": 50,
+    "epochs": 100,
     "lr": 1e-4,
     "noise_dim": 32,
     "hidden_dim": 128,
@@ -89,7 +89,8 @@ CONFIG = {
     "dropout": 0.2,
     "n_critic": 5,
     "gp_lambda": 10,
-    "patience": 10,
+    "patience": 15,
+    "recon_weight": 1.0,
 }
 
 print("Configuration:")
@@ -291,15 +292,16 @@ n_critic = CONFIG["n_critic"]
 gp_lambda = CONFIG["gp_lambda"]
 patience = CONFIG["patience"]
 noise_dim = CONFIG["noise_dim"]
+recon_weight = CONFIG["recon_weight"]
 
 # Metrics tracking
 history = {
     "epoch": [], "d_loss": [], "g_loss": [],
     "d_real_mean": [], "d_fake_mean": [], "gp_mean": [],
-    "epoch_time": []
+    "recon_loss": [], "epoch_time": []
 }
 
-best_loss = float("inf")
+best_recon = float("inf")
 patience_counter = 0
 
 print(f"Starting training for up to {CONFIG['epochs']} epochs...")
@@ -318,6 +320,7 @@ for epoch in range(CONFIG["epochs"]):
     epoch_d_real = 0.0
     epoch_d_fake = 0.0
     epoch_gp = 0.0
+    epoch_recon_loss = 0.0
     g_steps = 0
     
     t_start = time.time()
@@ -342,6 +345,7 @@ for epoch in range(CONFIG["epochs"]):
         
         opt_D.zero_grad()
         d_loss.backward()
+        torch.nn.utils.clip_grad_norm_(D.parameters(), max_norm=1.0)
         opt_D.step()
         
         epoch_d_loss += d_loss.item()
@@ -355,10 +359,11 @@ for epoch in range(CONFIG["epochs"]):
                 fake_x = G(x)
                 critic_loss = -torch.mean(D(fake_x))
                 recon_loss = torch.nn.functional.mse_loss(fake_x, x)
-                g_loss = critic_loss + 10.0 * recon_loss
+                g_loss = critic_loss + recon_weight * recon_loss
             
             opt_G.zero_grad()
             g_loss.backward()
+            torch.nn.utils.clip_grad_norm_(G.parameters(), max_norm=1.0)
             opt_G.step()
             
             epoch_g_loss += g_loss.item()
@@ -373,6 +378,7 @@ for epoch in range(CONFIG["epochs"]):
     n_batches = len(train_loader)
     avg_d = epoch_d_loss / n_batches
     avg_g = epoch_g_loss / max(g_steps, 1)
+    avg_recon = epoch_recon_loss / max(g_steps, 1)
     avg_real = epoch_d_real / n_batches
     avg_fake = epoch_d_fake / n_batches
     avg_gp = epoch_gp / n_batches
@@ -383,20 +389,18 @@ for epoch in range(CONFIG["epochs"]):
     history["g_loss"].append(avg_g)
     history["d_real_mean"].append(avg_real)
     history["d_fake_mean"].append(avg_fake)
-    history["gp_mean"].append(avg_gp)
-    history["epoch_time"].append(elapsed)
+    history["gp_mean"].append(avg_gp)    history[\"recon_loss\"].append(avg_recon)    history["epoch_time"].append(elapsed)
     
-    print(f"  D_loss: {avg_d:.4f} | G_loss: {avg_g:.4f} | "
-          f"D(real): {avg_real:.4f} | D(fake): {avg_fake:.4f} | "
-          f"GP: {avg_gp:.4f} | Time: {elapsed:.1f}s")
+    print(f"  D: {avg_d:.4f} | G: {avg_g:.4f} | Recon: {avg_recon:.6f} | "
+          f"D(real): {avg_real:.4f} | D(fake): {avg_fake:.4f} | GP: {avg_gp:.4f} | Time: {elapsed:.1f}s")
     
-    # Early stopping
-    if avg_d < best_loss:
-        best_loss = avg_d
+    # Early stopping based on reconstruction loss (autoencoder quality)
+    if avg_recon < best_recon:
+        best_recon = avg_recon
         torch.save(D.state_dict(), os.path.join(CKPT_DIR, "best_D.pth"))
         torch.save(G.state_dict(), os.path.join(CKPT_DIR, "best_G.pth"))
         patience_counter = 0
-        print(f"  ✓ Best model saved (loss: {best_loss:.6f})")
+        print(f"  ✓ Best model saved (recon: {best_recon:.6f})")
     else:
         patience_counter += 1
         print(f"  ✗ No improvement ({patience_counter}/{patience})")

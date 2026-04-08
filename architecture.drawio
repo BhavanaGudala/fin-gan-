@@ -1,0 +1,310 @@
+<mxfile host="app.diagrams.net" modified="2026-04-07" type="device">
+  <diagram id="ae-wgan-gp" name="AE-WGAN-GP Architecture">
+    <mxGraphModel dx="1800" dy="1200" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="2000" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- ==================== TITLE ==================== -->
+        <mxCell id="title" value="&lt;b&gt;AE-WGAN-GP Architecture&lt;/b&gt;&lt;br&gt;Unsupervised GAN-Based Intrusion Detection System&lt;br&gt;&lt;i&gt;Bidirectional GRU + Attention Pooling with WGAN-GP&lt;/i&gt;" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=16;" vertex="1" parent="1">
+          <mxGeometry x="400" y="20" width="500" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== TRAINING DATA ==================== -->
+        <mxCell id="data" value="&lt;b&gt;Benign Network Flows&lt;/b&gt;&lt;br&gt;x: (batch, 10, 77)&lt;br&gt;&lt;font color=&quot;#666666&quot;&gt;10 timesteps × 77 features&lt;/font&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=12;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="570" y="120" width="160" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== GENERATOR CONTAINER ==================== -->
+        <mxCell id="gen_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;strokeWidth=2;dashed=1;verticalAlign=top;fontSize=12;" vertex="1" parent="1">
+          <mxGeometry x="80" y="250" width="540" height="620" as="geometry"/>
+        </mxCell>
+        <mxCell id="gen_label" value="&lt;b&gt;GENERATOR (Autoencoder)&lt;/b&gt;&lt;br&gt;386,893 parameters" style="text;html=1;align=center;verticalAlign=top;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#7F6000;" vertex="1" parent="1">
+          <mxGeometry x="185" y="255" width="220" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- === ENCODER SECTION === -->
+        <mxCell id="enc_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF9E6;strokeColor=#d6b656;strokeWidth=1;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="100" y="310" width="230" height="240" as="geometry"/>
+        </mxCell>
+        <mxCell id="enc_label" value="&lt;b&gt;ENCODER&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#7F6000;" vertex="1" parent="1">
+          <mxGeometry x="170" y="312" width="80" height="25" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="enc_gru" value="&lt;b&gt;Encoder GRU&lt;/b&gt;&lt;br&gt;2-layer, unidirectional&lt;br&gt;77 → 128, dropout=0.2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="130" y="345" width="170" height="55" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="bottleneck" value="&lt;b&gt;Bottleneck&lt;/b&gt;&lt;br&gt;hidden[-1] → (batch, 128)&lt;br&gt;repeat → (batch, 10, 128)" style="shape=hexagon;perimeter=hexagonPerimeter2;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="120" y="430" width="190" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="latent_label" value="&lt;font color=&quot;#9673a6&quot;&gt;&lt;i&gt;Latent: 128-dim&lt;/i&gt;&lt;/font&gt;" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="155" y="490" width="120" height="20" as="geometry"/>
+        </mxCell>
+
+        <!-- === DECODER SECTION === -->
+        <mxCell id="dec_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FFF9E6;strokeColor=#d6b656;strokeWidth=1;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="370" y="310" width="230" height="350" as="geometry"/>
+        </mxCell>
+        <mxCell id="dec_label" value="&lt;b&gt;DECODER&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=middle;strokeColor=none;fillColor=none;fontSize=11;fontColor=#7F6000;" vertex="1" parent="1">
+          <mxGeometry x="445" y="312" width="80" height="25" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="dec_gru" value="&lt;b&gt;Decoder GRU&lt;/b&gt;&lt;br&gt;2-layer, unidirectional&lt;br&gt;128 → 128, dropout=0.2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="400" y="345" width="170" height="55" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="gen_norm" value="&lt;b&gt;LayerNorm&lt;/b&gt;&lt;br&gt;(128)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="425" y="425" width="120" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="gen_drop" value="&lt;b&gt;Dropout&lt;/b&gt;&lt;br&gt;p=0.2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="425" y="490" width="120" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="gen_fc" value="&lt;b&gt;Linear&lt;/b&gt;&lt;br&gt;128 → 77" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="425" y="555" width="120" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="gen_out" value="&lt;b&gt;x̂ (Reconstructed)&lt;/b&gt;&lt;br&gt;(batch, 10, 77)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="395" y="625" width="170" height="45" as="geometry"/>
+        </mxCell>
+
+        <!-- ENCODER ARROWS -->
+        <mxCell id="a_data_enc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#6c8ebf;" edge="1" source="data" target="enc_gru" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="a_enc_bn" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#b85450;" edge="1" source="enc_gru" target="bottleneck" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="a_bn_dec" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" source="bottleneck" target="dec_gru" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="215" y="520"/>
+              <mxPoint x="350" y="520"/>
+              <mxPoint x="350" y="372"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- DECODER ARROWS -->
+        <mxCell id="a_dec_norm" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#82b366;" edge="1" source="dec_gru" target="gen_norm" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="a_norm_drop" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#82b366;" edge="1" source="gen_norm" target="gen_drop" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="a_drop_fc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#d79b00;" edge="1" source="gen_drop" target="gen_fc" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="a_fc_out" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#d6b656;" edge="1" source="gen_fc" target="gen_out" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- ==================== DISCRIMINATOR CONTAINER ==================== -->
+        <mxCell id="disc_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#deecfc;strokeColor=#6c8ebf;strokeWidth=2;dashed=1;verticalAlign=top;" vertex="1" parent="1">
+          <mxGeometry x="700" y="250" width="280" height="620" as="geometry"/>
+        </mxCell>
+        <mxCell id="disc_label" value="&lt;b&gt;DISCRIMINATOR (Critic)&lt;/b&gt;&lt;br&gt;456,450 parameters" style="text;html=1;align=center;verticalAlign=top;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontSize=13;fontColor=#1A3A5C;" vertex="1" parent="1">
+          <mxGeometry x="745" y="255" width="190" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="disc_input" value="&lt;b&gt;Input&lt;/b&gt;&lt;br&gt;x or x̂&lt;br&gt;(batch, 10, 77)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="760" y="310" width="150" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="disc_gru" value="&lt;b&gt;Bidirectional GRU&lt;/b&gt;&lt;br&gt;2-layer, bidir&lt;br&gt;77 → 128×2 = 256&lt;br&gt;dropout=0.2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="750" y="390" width="170" height="65" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="disc_norm" value="&lt;b&gt;LayerNorm&lt;/b&gt;&lt;br&gt;(256)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="775" y="485" width="120" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="disc_drop" value="&lt;b&gt;Dropout&lt;/b&gt;&lt;br&gt;p=0.2" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="775" y="555" width="120" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="attn_pool" value="&lt;b&gt;Attention Pooling&lt;/b&gt;&lt;br&gt;Linear(256→1) + Softmax&lt;br&gt;Weighted sum over timesteps&lt;br&gt;(batch,10,256) → (batch,256)" style="shape=parallelogram;perimeter=parallelogramPerimeter;whiteSpace=wrap;html=1;fixedSize=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="730" y="625" width="210" height="65" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="disc_fc" value="&lt;b&gt;Linear&lt;/b&gt;&lt;br&gt;256 → 1&lt;br&gt;&lt;i&gt;(no sigmoid)&lt;/i&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="775" y="720" width="120" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="disc_score" value="&lt;b&gt;Wasserstein Score&lt;/b&gt;&lt;br&gt;(batch, 1)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#deecfc;strokeColor=#6c8ebf;fontSize=11;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="760" y="800" width="150" height="45" as="geometry"/>
+        </mxCell>
+
+        <!-- DISCRIMINATOR ARROWS -->
+        <mxCell id="a_di_gru" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#6c8ebf;" edge="1" source="disc_input" target="disc_gru" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_dgru_norm" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#82b366;" edge="1" source="disc_gru" target="disc_norm" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_dnorm_drop" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#82b366;" edge="1" source="disc_norm" target="disc_drop" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_ddrop_attn" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#9673a6;" edge="1" source="disc_drop" target="attn_pool" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_attn_dfc" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#d79b00;" edge="1" source="attn_pool" target="disc_fc" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_dfc_score" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#6c8ebf;" edge="1" source="disc_fc" target="disc_score" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- DATA TO DISC (real) -->
+        <mxCell id="a_data_disc" value="&lt;i&gt;real&lt;/i&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#6c8ebf;dashed=1;" edge="1" source="data" target="disc_input" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- GEN OUT TO DISC (fake) -->
+        <mxCell id="a_genout_disc" value="&lt;i&gt;fake&lt;/i&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#d6b656;dashed=1;" edge="1" source="gen_out" target="disc_input" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="660" y="647"/>
+              <mxPoint x="660" y="290"/>
+              <mxPoint x="835" y="290"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ==================== LOSS SECTION ==================== -->
+        <mxCell id="loss_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f5f5f5;strokeColor=#666666;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="250" width="420" height="620" as="geometry"/>
+        </mxCell>
+        <mxCell id="loss_title" value="&lt;b&gt;TRAINING LOSSES&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=top;strokeColor=none;fillColor=none;fontSize=13;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="1195" y="255" width="150" height="30" as="geometry"/>
+        </mxCell>
+
+        <!-- Critic Loss -->
+        <mxCell id="d_loss" value="&lt;b&gt;Critic Loss (D)&lt;/b&gt;&lt;hr&gt;D_loss = −(D(x) − D(x̂)) + λ·GP&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#666666&quot;&gt;Maximize gap: real↑  fake↓&lt;br&gt;λ = 10 (gradient penalty)&lt;br&gt;Gradient clip: max_norm=1.0&lt;br&gt;Updated 5× per G update&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#deecfc;strokeColor=#6c8ebf;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1090" y="310" width="220" height="140" as="geometry"/>
+        </mxCell>
+
+        <!-- GP Detail -->
+        <mxCell id="gp_detail" value="&lt;b&gt;Gradient Penalty&lt;/b&gt;&lt;br&gt;GP = E[(‖∇D(x̃)‖₂ − 1)²]&lt;br&gt;&lt;font color=&quot;#666666&quot;&gt;x̃ = α·x + (1−α)·x̂&lt;br&gt;Enforces 1-Lipschitz constraint&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8E8E8;strokeColor=#999999;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1090" y="480" width="220" height="70" as="geometry"/>
+        </mxCell>
+
+        <!-- Generator Loss -->
+        <mxCell id="g_loss" value="&lt;b&gt;Generator Loss (G)&lt;/b&gt;&lt;hr&gt;G_loss = −D(x̂) + w·MSE(x, x̂)&lt;br&gt;&lt;br&gt;&lt;font color=&quot;#666666&quot;&gt;recon_weight (w) = 1.0&lt;br&gt;Fool critic + reconstruct input&lt;br&gt;Gradient clip: max_norm=1.0&lt;br&gt;Updated 1× per 5 D updates&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;align=center;" vertex="1" parent="1">
+          <mxGeometry x="1090" y="580" width="220" height="140" as="geometry"/>
+        </mxCell>
+
+        <!-- Early Stopping -->
+        <mxCell id="early_stop" value="&lt;b&gt;Early Stopping&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#666666&quot;&gt;Metric: reconstruction loss&lt;br&gt;Patience: 15 epochs&lt;br&gt;Max epochs: 100&lt;/font&gt;" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;size=0.15;" vertex="1" parent="1">
+          <mxGeometry x="1340" y="370" width="120" height="120" as="geometry"/>
+        </mxCell>
+
+        <!-- Arrow from D score to D loss -->
+        <mxCell id="a_score_dloss" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#6c8ebf;" edge="1" source="disc_score" target="d_loss" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="1050" y="822"/>
+              <mxPoint x="1050" y="380"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ==================== INFERENCE SECTION ==================== -->
+        <mxCell id="inf_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#E8F5E9;strokeColor=#4CAF50;strokeWidth=2;dashed=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="930" width="900" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="inf_title" value="&lt;b&gt;INFERENCE (Anomaly Scoring)&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=top;strokeColor=none;fillColor=none;fontSize=13;fontColor=#2E7D32;" vertex="1" parent="1">
+          <mxGeometry x="380" y="935" width="250" height="30" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="test_input" value="&lt;b&gt;Test Flow&lt;/b&gt;&lt;br&gt;x: (batch, 10, 77)&lt;br&gt;&lt;font color=&quot;#666666&quot;&gt;Benign or Attack&lt;/font&gt;" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;backgroundOutline=1;size=10;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="100" y="980" width="130" height="65" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="inf_gen" value="&lt;b&gt;Generator&lt;/b&gt;&lt;br&gt;x̂ = G(x)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="290" y="985" width="120" height="50" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="inf_mse" value="&lt;b&gt;Reconstruction Error&lt;/b&gt;&lt;br&gt;MSE(x, x̂)&lt;br&gt;&lt;font color=&quot;#666666&quot;&gt;mean over features &amp;amp; timesteps&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="470" y="980" width="180" height="60" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="inf_decision" value="&lt;b&gt;score &gt; θ ?&lt;/b&gt;&lt;br&gt;&lt;font color=&quot;#666666&quot;&gt;θ via Youden's J&lt;/font&gt;" style="shape=mxgraph.flowchart.decision;whiteSpace=wrap;html=1;fillColor=#E8E8E8;strokeColor=#999999;fontSize=10;size=0.18;" vertex="1" parent="1">
+          <mxGeometry x="700" y="970" width="110" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="inf_benign" value="&lt;font color=&quot;#2E7D32&quot;&gt;&lt;b&gt;BENIGN&lt;/b&gt;&lt;br&gt;Low recon error&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="850" y="960" width="110" height="40" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="inf_attack" value="&lt;font color=&quot;#B71C1C&quot;&gt;&lt;b&gt;ATTACK&lt;/b&gt;&lt;br&gt;High recon error&lt;/font&gt;" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="850" y="1040" width="110" height="40" as="geometry"/>
+        </mxCell>
+
+        <!-- Inference arrows -->
+        <mxCell id="a_ti_gen" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#d6b656;" edge="1" source="test_input" target="inf_gen" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_gen_mse" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#b85450;" edge="1" source="inf_gen" target="inf_mse" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_mse_dec" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#999999;" edge="1" source="inf_mse" target="inf_decision" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_dec_ben" value="No" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#2E7D32;" edge="1" source="inf_decision" target="inf_benign" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+        <mxCell id="a_dec_atk" value="Yes" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=2;strokeColor=#B71C1C;" edge="1" source="inf_decision" target="inf_attack" parent="1">
+          <mxGeometry relative="1" as="geometry"/>
+        </mxCell>
+
+        <!-- x also feeds into MSE calc -->
+        <mxCell id="a_x_mse" value="&lt;i&gt;x (original)&lt;/i&gt;" style="edgeStyle=orthogonalEdgeStyle;rounded=1;strokeWidth=1;strokeColor=#666666;dashed=1;" edge="1" source="test_input" target="inf_mse" parent="1">
+          <mxGeometry relative="1" as="geometry">
+            <Array as="points">
+              <mxPoint x="165" y="1070"/>
+              <mxPoint x="560" y="1070"/>
+            </Array>
+          </mxGeometry>
+        </mxCell>
+
+        <!-- ==================== LEGEND ==================== -->
+        <mxCell id="legend_box" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#FAFAFA;strokeColor=#CCCCCC;strokeWidth=1;" vertex="1" parent="1">
+          <mxGeometry x="1060" y="930" width="420" height="200" as="geometry"/>
+        </mxCell>
+        <mxCell id="legend_title" value="&lt;b&gt;LEGEND&lt;/b&gt;" style="text;html=1;align=center;verticalAlign=top;strokeColor=none;fillColor=none;fontSize=12;fontColor=#333333;" vertex="1" parent="1">
+          <mxGeometry x="1220" y="935" width="80" height="25" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="leg_rnn" value="GRU Layer" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#f8cecc;strokeColor=#b85450;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="970" width="80" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_reg" value="Regularization" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="1005" width="80" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_proj" value="Projection" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#ffe6cc;strokeColor=#d79b00;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="1040" width="80" height="25" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_attn" value="Attention / Bottleneck" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=9;" vertex="1" parent="1">
+          <mxGeometry x="1080" y="1075" width="110" height="25" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="leg_info1" value="&lt;font color=&quot;#666666&quot;&gt;Optimizer: Adam (β₁=0.5, β₂=0.9)&lt;br&gt;Learning rate: 1e-4&lt;br&gt;Critic updates / G update: 5&lt;br&gt;Total params: 843,343&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=top;strokeColor=none;fillColor=none;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1250" y="970" width="210" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="leg_info2" value="&lt;font color=&quot;#666666&quot;&gt;Anomaly score: MSE(x, G(x))&lt;br&gt;Threshold: Youden's J on ROC&lt;br&gt;Early stop: recon loss, patience=15&lt;br&gt;Gradient clipping: max_norm=1.0&lt;/font&gt;" style="text;html=1;align=left;verticalAlign=top;strokeColor=none;fillColor=none;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="1250" y="1050" width="210" height="70" as="geometry"/>
+        </mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
