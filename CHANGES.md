@@ -1213,3 +1213,148 @@ Spectral normalization constrains each weight matrix's largest singular value to
 - `src/model.py` — Spectral norm on all D GRU weight matrices
 - `src/train.py` — Removed `torch.clamp(gp, max=1.0)`
 - `notebooks/train_and_evaluate.py` — All above mirrored
+
+### 17.7 Phase 10 Results (Run 13)
+
+Trained 300 epochs on Kaggle T4×2 (DataParallel), batch_size=1024, gp_lambda=20, n_critic=3, full GRU spectral norm.
+
+| Metric | Phase 9 Run 12 | Phase 10 Run 13 | Delta | Notes |
+|---|---|---|---|---|
+| **ROC-AUC (Learned Fusion CV)** | 0.9999 | **0.9999** | ±0 | Maintained |
+| **ROC-AUC (Latent Mahalanobis)** | 0.9998 | **0.9998** | ±0 | Still dominant |
+| **ROC-AUC (PF Mahalanobis)** | 0.9993 | 0.9990 | −0.0003 | Within noise |
+| **ROC-AUC (All 4 signals sum)** | 0.9996 | 0.9996 | ±0 | |
+| **ROC-AUC (Recon_z + D_z)** | 0.9925 | 0.9583 | −0.0342 | D signal degraded |
+| **ROC-AUC (Mean MSE raw)** | 0.9186 | **0.9399** | +0.0213 | Better recon |
+| **ROC-AUC (-D(x) raw)** | 0.7408 | **0.1691** | −0.5717 | D collapsed |
+| **TPR (Recall)** | 99.63% | **99.43%** | −0.20% | |
+| **FPR** | 0.53% | **0.47%** | −0.06% | |
+| **Accuracy** | 99.62% | **99.43%** | −0.19% | |
+| **Precision** | 99.97% | **99.97%** | ±0 | |
+| **F1** | 0.9980 | **0.9970** | −0.0010 | |
+| **Best epoch** | 296 | **296** | | |
+| **Best recon** | 0.8113 | **0.7310** | −0.0803 | Much better |
+| **Train time** | 76.3 min | **86.1 min** | +9.8 min | Slightly slower |
+| **Threshold (Youden's J)** | 0.876 | **0.865** | | |
+
+**Confusion matrix (Run 13, threshold=0.865):**
+| | Predicted Normal | Predicted Attack |
+|---|---|---|
+| **Actual Normal** | 19,456 (TN) | 92 (FP) |
+| **Actual Attack** | 1,914 (FN) | 331,626 (TP) |
+
+**LR fusion coefficients (Run 13):**
+| Signal | Coefficient | Run 12 | Change |
+|---|---|---|---|
+| `latent_z` | **37.333** | 16.553 | +126% (compensating for D) |
+| `d_z` | 0.977 | 1.562 | −37% |
+| `recon_z` | −1.550 | −0.917 | −69% |
+| `pf_mahal_z` | 0.336 | −0.942 | Flipped sign |
+
+**Training dynamics (primary goal — critic stability):**
+| Metric | Phase 9 (Run 12) | Phase 10 (Run 13) | Improvement |
+|---|---|---|---|
+| GP drift | 0.08 → 0.82 | **0.06 → 0.26** | **3× less drift** |
+| D(real) final | 23.07 | **12.67** | **45% reduction** |
+| D(fake) final | −23.44 | **−20.83** | **11% reduction** |
+| D divergence gap | ~46 | **~33** | **28% reduction** |
+| Generator loss (final) | ~105 | **~94** | Improving more |
+| Critic loss (final) | ~−28 | **~−28** | Similar |
+
+**Per-attack detection rates (Run 13):**
+
+| Attack Type | Count | Detected | Rate | vs Run 12 |
+|---|---|---|---|---|
+| DrDoS_DNS | 3,669 | 3,668 | 99.97% | ±0 |
+| DrDoS_LDAP | 1,440 | 1,440 | 100.00% | ±0 |
+| DrDoS_MSSQL | 6,212 | 6,212 | 100.00% | ±0 |
+| DrDoS_NTP | 121,368 | 121,368 | 100.00% | ±0 |
+| DrDoS_NetBIOS | 598 | 598 | 100.00% | ±0 |
+| DrDoS_SNMP | 2,717 | 2,717 | 100.00% | ±0 |
+| DrDoS_UDP | 10,420 | 10,420 | 100.00% | ±0 |
+| LDAP | 1,906 | 1,906 | 100.00% | ±0 |
+| MSSQL | 8,523 | 8,523 | 100.00% | ±0 |
+| NetBIOS | 644 | 644 | 100.00% | ±0 |
+| Portmap | 685 | 685 | 100.00% | ±0 |
+| **Syn** | 49,373 | 47,609 | **96.43%** | −1.55% |
+| TFTP | 98,917 | 98,917 | 100.00% | ±0 |
+| **UDP** | 18,090 | 17,946 | **99.20%** | +0.48% |
+| UDP-lag | 8,872 | 8,872 | 100.00% | +0.01% |
+| **UDPLag** | 55 | 50 | **90.91%** | +1.82% |
+| WebDDoS | 51 | 51 | 100.00% | ±0 |
+| **Benign (TNR)** | 19,548 | 19,456 | **99.53%** | +0.06% |
+
+### 17.8 Phase 10 Analysis
+
+**Primary goal achieved:** Critic stability dramatically improved. GP drift reduced 3× (0.26 vs 0.82), D divergence gap reduced 28%. The three changes (gp_lambda 20, n_critic 3, full GRU spectral norm) worked synergistically.
+
+**Trade-off: D(x) signal collapsed.** The heavy spectral normalization on all 8 GRU weight matrices + FC constrained D's output range so much that `-D(x)` can no longer discriminate benign from attack (AUC 0.1691 — worse than random). The LR fusion compensated by increasing `latent_z` weight by 126% (37.3 vs 16.6), but the lost D signal caused Recon_z+D_z to drop from 0.9925→0.9583.
+
+**Gains from better reconstruction:** The more balanced training (n_critic=3 → more G updates relative to D) improved reconstruction significantly: best recon 0.731 vs 0.811 (−10%). This boosted raw MSE AUC from 0.9186→0.9399 (+0.021).
+
+**Overall: wash at the top.** AUC held at 0.9999, F1 at 0.997. The system relies almost entirely on latent Mahalanobis distance, with `latent_z` coefficient 37.3× — by far the dominant signal. The critic's contribution as a scoring signal is now negligible, though it still provides indirect benefit through adversarial regularization of the encoder.
+
+**Remaining weak spots:** Syn (96.4%), UDPLag (90.9%, 55 samples), UDP (99.2%).
+
+---
+
+## Summary of All Phases (Final)
+
+| Phase | Run | Best AUC | Scoring Method | Key Change |
+|---|---|---|---|---|
+| Phase 0 (baseline) | 1 | 0.4670 | Mean MSE | Original model |
+| Phase 2 | 2 | 0.7930 | Mean MSE | AE-WGAN-GP + scoring fix |
+| Phase 5 | 5 | 0.9300 | Mean MSE | Data pipeline overhaul |
+| Phase 6 | 8 | 0.9833 | Mean MSE | Critic stability |
+| Phase 7+7b | 10 | 0.9842 | Recon_z + D_z | Capacity + rate features + speed |
+| Phase 8 | 11 | 0.9999* | Latent Mahalanobis | Scoring overhaul (*eval bugs) |
+| Phase 9 | 12 | 0.9999 | Learned Fusion (CV) | Eval bug fixes, validated |
+| **Phase 10** | **13** | **0.9999** | **Learned Fusion (CV)** | **Critic stability fix** |
+
+| Metric | Phase 9 (Run 12) | Phase 10 (Run 13) | Paper |
+|---|---|---|---|
+| **ROC-AUC** | 0.9999 | **0.9999** | 0.9963 |
+| **Accuracy** | 99.62% | **99.43%** | — |
+| **Precision** | 99.97% | **99.97%** | — |
+| **Recall (TPR)** | 99.63% | **99.43%** | — |
+| **F1-Score** | 0.9980 | **0.9970** | — |
+| **FPR** | 0.53% | **0.47%** | — |
+| **GP drift** | 0.08→0.82 | **0.06→0.26** | — |
+| **D(x) AUC** | 0.7408 | **0.1691** | — |
+| **Best recon** | 0.8113 | **0.7310** | — |
+| **Architecture** | GRU AE-WGAN-GP | same | TCN/SA WGAN |
+
+---
+
+## 18. Note: D(real) vs D(fake) Divergence
+
+### 18.1 Observation
+
+Across all runs, D(real) and D(fake) diverge rather than converge. In Run 13 (Phase 10), D(real) settles at ~12.7 and D(fake) at ~−20.8, producing a persistent gap of ~33. A healthy WGAN-GP typically sees these values converge as the generator improves — the discriminator should struggle to tell real from fake.
+
+### 18.2 Root Cause
+
+The divergence is a direct consequence of `recon_weight=100`. The generator's loss is:
+
+```
+g_loss = critic_loss + 100 × recon_loss ≈ 5 + 100 × 0.73 = 78
+```
+
+The adversarial term (`-D(G(x))`) contributes only ~6% of the generator's total gradient signal. The generator overwhelmingly optimises for faithful reconstruction of benign data, not for fooling the discriminator. Since G barely tries to produce outputs that D rates as "real," D easily maintains a large gap between its scores for real vs reconstructed inputs.
+
+Additionally, full spectral normalization on all 9 of D's weight matrices (Phase 10) compressed D's output range but did not resolve the fundamental imbalance — it simply reduced the gap from ~46 (Run 12) to ~33 (Run 13).
+
+### 18.3 Why It Doesn't Matter
+
+This system does **not** use D(x) as the primary anomaly score. The scoring pipeline relies on:
+
+| Signal | LR Coefficient | Standalone AUC | Role |
+|---|---|---|---|
+| `latent_z` (encoder Mahalanobis) | **37.333** | 0.9998 | **Dominant** |
+| `d_z` (critic z-score) | 0.977 | 0.1691 | Negligible |
+| `recon_z` (reconstruction z-score) | −1.550 | 0.9399 | Secondary |
+| `pf_mahal_z` (per-feature Mahalanobis) | 0.336 | 0.9990 | Minor |
+
+The encoder learns excellent latent representations **because** of the high reconstruction weight — it is forced to faithfully compress benign data into a tight latent manifold. Attacks that don't fit this manifold produce large Mahalanobis distances. The adversarial component contributes indirectly by regularising the encoder (preventing it from learning trivial identity mappings), even though D(x) itself is not a useful scoring signal.
+
+In a standard GAN where D(x) is the anomaly score (like the reference paper's TCN/SA architecture), D convergence would be critical. In this AE-WGAN-GP with Mahalanobis scoring, it is cosmetic. The final metrics — ROC-AUC 0.9999, F1 0.9970, 14/17 attack types at 100% detection — confirm the system works despite the divergence, not because of convergence.
