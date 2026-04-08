@@ -2,21 +2,27 @@ train_csv: data/merged.csv
 test_csv: data/merged.csv
 
 label_column: Label
-seq_len: 10
+seq_len: 20
 batch_size: 128
-epochs: 150
+epochs: 200
 lr_G: 0.0001
 lr_D: 0.00005
 device: cpu
 
 # Model architecture
 noise_dim: 32
-hidden_dim: 64
+hidden_dim: 128
 num_layers: 2
 dropout: 0.2
 
 # Training
 n_critic: 5
 gp_lambda: 20
-patience: 25
+patience: 30
 recon_weight: 100.0
+
+# LR scheduling
+use_cosine_lr: true
+cosine_T_max: 200
+cosine_eta_min_G: 0.00001
+cosine_eta_min_D: 0.000005

@@ -80,19 +80,23 @@ CONFIG = {
     "train_csv": os.path.join(DATA_DIR, "merged.csv"),
     "test_csv": os.path.join(DATA_DIR, "merged.csv"),
     "label_column": "Label",
-    "seq_len": 10,
+    "seq_len": 20,
     "batch_size": 512,
-    "epochs": 150,
+    "epochs": 200,
     "lr_G": 1e-4,
     "lr_D": 5e-5,
     "noise_dim": 32,
-    "hidden_dim": 64,
+    "hidden_dim": 128,
     "num_layers": 2,
     "dropout": 0.2,
     "n_critic": 5,
     "gp_lambda": 20,
-    "patience": 25,
+    "patience": 30,
     "recon_weight": 100.0,
+    "use_cosine_lr": True,
+    "cosine_T_max": 200,
+    "cosine_eta_min_G": 1e-5,
+    "cosine_eta_min_D": 5e-6,
 }
 
 print("Configuration:")
@@ -172,11 +176,27 @@ class FlowDataset(Dataset):
         if drop_cols:
             df = df.drop(columns=drop_cols)
 
+        # ── Derived rate features ──
+        dur = df["Flow Duration"].values.copy() if "Flow Duration" in df.columns else None
+        if dur is not None:
+            dur_s = dur / 1e6  # microseconds → seconds
+            dur_s = np.where(dur_s < 1e-6, 1e-6, dur_s)
+            if "Total Fwd Packets" in df.columns:
+                df["Fwd Packets/s"] = df["Total Fwd Packets"].values / dur_s
+            if "Total Backward Packets" in df.columns:
+                df["Bwd Packets/s"] = df["Total Backward Packets"].values / dur_s
+            if "Fwd Packets Length Total" in df.columns:
+                df["Fwd Bytes/s"] = df["Fwd Packets Length Total"].values / dur_s
+            if "Bwd Packets Length Total" in df.columns:
+                df["Bwd Bytes/s"] = df["Bwd Packets Length Total"].values / dur_s
+
         self.feature_names = list(df.columns)
         data = df.values.astype(np.float32)
+        data = np.where(np.isfinite(data), data, 0.0)
 
         # Log-transform heavy-tailed features: sign(x) * log1p(|x|)
-        log_mask = np.array([c in LOG_FEATURES for c in self.feature_names])
+        log_set = set(LOG_FEATURES) | {"Fwd Packets/s", "Bwd Packets/s", "Fwd Bytes/s", "Bwd Bytes/s"}
+        log_mask = np.array([c in log_set for c in self.feature_names])
         self._log_mask = log_mask
         if log_mask.any():
             data[:, log_mask] = np.sign(data[:, log_mask]) * np.log1p(np.abs(data[:, log_mask]))
@@ -338,6 +358,15 @@ def gradient_penalty(D, real, fake, device):
 opt_G = optim.Adam(G.parameters(), lr=CONFIG["lr_G"], betas=(0.5, 0.9))
 opt_D = optim.Adam(D.parameters(), lr=CONFIG["lr_D"], betas=(0.5, 0.9))
 
+# Cosine annealing LR scheduler — decays lr smoothly to break late-training plateaus
+use_cosine = CONFIG.get("use_cosine_lr", False)
+if use_cosine:
+    T_max = CONFIG.get("cosine_T_max", CONFIG["epochs"])
+    sched_G = optim.lr_scheduler.CosineAnnealingLR(opt_G, T_max=T_max,
+                                                     eta_min=CONFIG.get("cosine_eta_min_G", 1e-5))
+    sched_D = optim.lr_scheduler.CosineAnnealingLR(opt_D, T_max=T_max,
+                                                     eta_min=CONFIG.get("cosine_eta_min_D", 5e-6))
+
 # Mixed precision for GPU speedup
 use_amp = device.type == "cuda"
 scaler = torch.amp.GradScaler(enabled=use_amp)
@@ -466,6 +495,11 @@ for epoch in range(CONFIG["epochs"]):
         print(f"\n⚡ Early stopping at epoch {epoch+1}")
         break
 
+    # Step LR schedulers
+    if use_cosine:
+        sched_G.step()
+        sched_D.step()
+
 print(f"\nTraining complete! Best recon loss: {best_recon:.6f}")
 print(f"Total time: {sum(history['epoch_time']):.0f}s ({sum(history['epoch_time'])/60:.1f} min)")
 
@@ -552,20 +586,26 @@ baseline_loader, _ = get_loader(
 
 train_recon_scores = []
 train_d_scores = []
+train_per_feat = []
 with torch.no_grad():
     for x, _ in tqdm(baseline_loader, desc="Baseline"):
         x = x.to(device)
         x_hat = G_best(x)
         # Mean MSE per sample (mean over time and features)
         recon = ((x - x_hat) ** 2).mean(dim=(1, 2))
+        per_feat = ((x - x_hat) ** 2).mean(dim=1)  # (batch, feat_dim)
         d_score = D_best(x).squeeze(-1)
         train_recon_scores.append(recon.cpu())
         train_d_scores.append(d_score.cpu())
+        train_per_feat.append(per_feat.cpu())
 
 train_recon_all = torch.cat(train_recon_scores)
 train_d_all = torch.cat(train_d_scores)
+train_pf = torch.cat(train_per_feat).numpy()
 recon_mu, recon_sigma = train_recon_all.mean().item(), train_recon_all.std().item()
 d_mu, d_sigma = train_d_all.mean().item(), train_d_all.std().item()
+pf_mu = train_pf.mean(axis=0)
+pf_std = train_pf.std(axis=0) + 1e-8
 
 print(f"  Benign recon baseline: μ={recon_mu:.4f}, σ={recon_sigma:.4f}")
 print(f"  Benign D(x)  baseline: μ={d_mu:.4f}, σ={d_sigma:.4f}")
@@ -575,20 +615,30 @@ print("Running inference...")
 recon_raw = []
 d_raw = []
 labels = []
+test_per_feat = []
 
 with torch.no_grad():
     for x, y in tqdm(test_loader, desc="Inference"):
         x = x.to(device)
         x_hat = G_best(x)
         recon = ((x - x_hat) ** 2).mean(dim=(1, 2)).cpu().numpy()
+        per_feat = ((x - x_hat) ** 2).mean(dim=1).cpu().numpy()
         d_score = D_best(x).squeeze(-1).cpu().numpy()
         recon_raw.extend(recon)
         d_raw.extend(d_score)
+        test_per_feat.append(per_feat)
         labels.extend(y.numpy())
 
 recon_raw = np.array(recon_raw)
 d_raw = np.array(d_raw)
 labels = np.array(labels)
+test_pf = np.concatenate(test_per_feat, axis=0)
+
+# Per-feature weighted scoring
+pf_z = (test_pf - pf_mu) / pf_std
+feat_d = np.abs(pf_z.mean(axis=0))
+feat_w = np.exp(feat_d) / np.exp(feat_d).sum()
+weighted_recon = (pf_z * feat_w).sum(axis=1)
 
 # Normalise to z-scores using benign baselines
 recon_z = (recon_raw - recon_mu) / max(recon_sigma, 1e-8)
@@ -600,6 +650,7 @@ from sklearn.metrics import roc_auc_score as _auc
 
 candidates = {
     "Mean MSE (raw)":           recon_raw,
+    "Weighted MSE (per-feat)":  weighted_recon,
     "-D(x) (raw)":              -d_raw,
     "Recon z-score":            recon_z,
     "D z-score":                d_z,
@@ -793,3 +844,63 @@ print(f"""
   
   Checkpoints saved to: {CKPT_DIR}/
 """)
+
+# %% [markdown]
+# ## 11. Save Console Logs
+
+# %%
+# Auto-save all console output to logs/log_runN.txt (auto-incremented)
+import glob, re as _re
+
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(".")), "logs")
+os.makedirs(LOG_DIR, exist_ok=True)
+
+# Find the next run number by scanning existing log files
+existing = glob.glob(os.path.join(LOG_DIR, "log_run*.txt"))
+run_nums = []
+for f in existing:
+    m = _re.search(r"log_run(\d+)\.txt$", f)
+    if m:
+        run_nums.append(int(m.group(1)))
+next_run = max(run_nums, default=0) + 1
+log_path = os.path.join(LOG_DIR, f"log_run{next_run}.txt")
+
+# Collect the log content from the training history and results
+log_lines = []
+log_lines.append(f"Running locally | Data: {DATA_DIR}")
+log_lines.append(f"Using {'GPU: ' + torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'CPU'}")
+log_lines.append("Configuration:")
+for k, v in CONFIG.items():
+    log_lines.append(f"  {k}: {v}")
+log_lines.append("")
+log_lines.append(f"Generator:     {count_params(G):,} parameters")
+log_lines.append(f"Discriminator: {count_params(D):,} parameters")
+log_lines.append(f"Total:         {count_params(G) + count_params(D):,} parameters")
+log_lines.append(f"Features: {feat_dim}")
+log_lines.append(f"Training samples: {len(train_ds.data):,}")
+log_lines.append("")
+log_lines.append(f"Training for {CONFIG['epochs']} epochs")
+for i, ep in enumerate(history["epoch"]):
+    log_lines.append(
+        f"Epoch {ep}/{CONFIG['epochs']} | "
+        f"D: {history['d_loss'][i]:.4f} | G: {history['g_loss'][i]:.4f} | "
+        f"Recon: {history['recon_loss'][i]:.6f} | "
+        f"D(real): {history['d_real_mean'][i]:.4f} | D(fake): {history['d_fake_mean'][i]:.4f} | "
+        f"GP: {history['gp_mean'][i]:.4f} | Time: {history['epoch_time'][i]:.1f}s"
+    )
+log_lines.append("")
+log_lines.append(f"Best recon loss: {best_recon:.6f}")
+log_lines.append(f"Total training time: {sum(history['epoch_time']):.0f}s ({sum(history['epoch_time'])/60:.1f} min)")
+log_lines.append("")
+log_lines.append("=" * 50)
+log_lines.append(f"  ROC-AUC: {auc:.4f}")
+log_lines.append("=" * 50)
+log_lines.append(f"  Accuracy:  {accuracy_score(labels, y_pred):.4f}")
+log_lines.append(f"  Precision: {precision_score(labels, y_pred):.4f}")
+log_lines.append(f"  Recall:    {recall_score(labels, y_pred):.4f}")
+log_lines.append(f"  F1-Score:  {f1_score(labels, y_pred):.4f}")
+
+with open(log_path, "w") as f:
+    f.write("\n".join(log_lines) + "\n")
+
+print(f"Logs saved to: {log_path}")

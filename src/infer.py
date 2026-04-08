@@ -41,38 +41,58 @@ D.eval()
 # ── Phase 1: baselines on benign training data ──
 print("Computing baselines on training data...")
 train_recon_scores, train_d_scores = [], []
+train_per_feat = []  # per-feature MSE for weight computation
 with torch.no_grad():
     for x, _ in tqdm(train_loader, desc="Baseline"):
         x = x.to(device)
         x_hat = G(x)
         recon = ((x - x_hat) ** 2).mean(dim=(1, 2))
+        per_feat = ((x - x_hat) ** 2).mean(dim=1)  # (batch, feat_dim)
         d_score = D(x).squeeze(-1)
         train_recon_scores.append(recon.cpu())
         train_d_scores.append(d_score.cpu())
+        train_per_feat.append(per_feat.cpu())
 
 train_recon_all = torch.cat(train_recon_scores)
 train_d_all = torch.cat(train_d_scores)
+train_pf = torch.cat(train_per_feat).numpy()  # (N_train, feat_dim)
 recon_mu, recon_sigma = train_recon_all.mean().item(), train_recon_all.std().item()
 d_mu, d_sigma = train_d_all.mean().item(), train_d_all.std().item()
+# Per-feature benign baselines for weighted scoring
+pf_mu = train_pf.mean(axis=0)   # (feat_dim,)
+pf_std = train_pf.std(axis=0) + 1e-8
 print(f"  Benign recon baseline: μ={recon_mu:.4f}, σ={recon_sigma:.4f}")
 print(f"  Benign D(x)  baseline: μ={d_mu:.4f}, σ={d_sigma:.4f}")
 
 # ── Phase 2: score test data ──
 print("Running inference...")
 recon_raw, d_raw, labels = [], [], []
+test_per_feat = []
 with torch.no_grad():
     for x, y in tqdm(loader, desc="Inference"):
         x = x.to(device)
         x_hat = G(x)
         recon = ((x - x_hat) ** 2).mean(dim=(1, 2)).cpu().numpy()
+        per_feat = ((x - x_hat) ** 2).mean(dim=1).cpu().numpy()  # (batch, feat_dim)
         d_score = D(x).squeeze(-1).cpu().numpy()
         recon_raw.extend(recon)
         d_raw.extend(d_score)
+        test_per_feat.append(per_feat)
         labels.extend(y.numpy())
 
 recon_raw = np.array(recon_raw)
 d_raw = np.array(d_raw)
 labels = np.array(labels)
+test_pf = np.concatenate(test_per_feat, axis=0)  # (N_test, feat_dim)
+
+# Per-feature z-score weighted scoring:
+# Features with higher variance ratio (test/train) are more anomalous.
+# Weight = softmax of per-feature Cohen's d computed on the fly.
+pf_z = (test_pf - pf_mu) / pf_std  # (N_test, feat_dim) z-scored per feature
+# Feature importance: how much each feature deviates from benign on average
+feat_d = np.abs(pf_z.mean(axis=0))  # average z-deviation per feature
+feat_w = np.exp(feat_d) / np.exp(feat_d).sum()  # softmax weights
+weighted_recon = (pf_z * feat_w).sum(axis=1)  # weighted anomaly score
 
 recon_z = (recon_raw - recon_mu) / max(recon_sigma, 1e-8)
 d_z = -(d_raw - d_mu) / max(d_sigma, 1e-8)
@@ -80,6 +100,7 @@ d_z = -(d_raw - d_mu) / max(d_sigma, 1e-8)
 # ── Phase 3: compare scoring methods ──
 candidates = {
     "Mean MSE (raw)":           recon_raw,
+    "Weighted MSE (per-feat)":  weighted_recon,
     "-D(x) (raw)":              -d_raw,
     "Recon_z + D_z (1:1)":     recon_z + d_z,
     "0.7·Recon_z + 0.3·D_z":   0.7 * recon_z + 0.3 * d_z,

@@ -76,13 +76,32 @@ class FlowDataset(Dataset):
         if drop_cols:
             df = df.drop(columns=drop_cols)
 
+        # ── Derived rate features ──
+        # Bytes and packets per second are strong DDoS indicators.
+        dur = df["Flow Duration"].values.copy() if "Flow Duration" in df.columns else None
+        if dur is not None:
+            dur_s = dur / 1e6  # microseconds → seconds
+            dur_s = np.where(dur_s < 1e-6, 1e-6, dur_s)  # avoid div-by-zero
+            if "Total Fwd Packets" in df.columns:
+                df["Fwd Packets/s"] = df["Total Fwd Packets"].values / dur_s
+            if "Total Backward Packets" in df.columns:
+                df["Bwd Packets/s"] = df["Total Backward Packets"].values / dur_s
+            if "Fwd Packets Length Total" in df.columns:
+                df["Fwd Bytes/s"] = df["Fwd Packets Length Total"].values / dur_s
+            if "Bwd Packets Length Total" in df.columns:
+                df["Bwd Bytes/s"] = df["Bwd Packets Length Total"].values / dur_s
+
         self.feature_names = df.columns.tolist()
 
         data = df.values.astype(np.float32)
+        # Clean any inf/nan from derived features
+        data = np.where(np.isfinite(data), data, 0.0)
 
         # Log-transform heavy-tailed features before normalization.
         # sign(x) * log1p(|x|) preserves sign for negative values.
-        log_mask = np.array([c in LOG_FEATURES for c in self.feature_names])
+        # Includes derived rate features which are also heavy-tailed.
+        log_set = set(LOG_FEATURES) | {"Fwd Packets/s", "Bwd Packets/s", "Fwd Bytes/s", "Bwd Bytes/s"}
+        log_mask = np.array([c in log_set for c in self.feature_names])
         self._log_mask = log_mask
         if log_mask.any():
             data[:, log_mask] = np.sign(data[:, log_mask]) * np.log1p(np.abs(data[:, log_mask]))

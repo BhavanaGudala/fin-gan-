@@ -75,6 +75,15 @@ lr_D = cfg.get("lr_D", cfg.get("lr", 5e-5))
 opt_G = optim.Adam(G.parameters(), lr=lr_G, betas=(0.5, 0.9))
 opt_D = optim.Adam(D.parameters(), lr=lr_D, betas=(0.5, 0.9))
 
+# LR scheduling — cosine annealing decays lr smoothly to break late-training plateaus
+use_cosine = cfg.get("use_cosine_lr", False)
+if use_cosine:
+    T_max = cfg.get("cosine_T_max", cfg["epochs"])
+    sched_G = optim.lr_scheduler.CosineAnnealingLR(opt_G, T_max=T_max,
+                                                     eta_min=cfg.get("cosine_eta_min_G", 1e-5))
+    sched_D = optim.lr_scheduler.CosineAnnealingLR(opt_D, T_max=T_max,
+                                                     eta_min=cfg.get("cosine_eta_min_D", 5e-6))
+
 # Create checkpoint folder
 os.makedirs("checkpoints", exist_ok=True)
 
@@ -152,6 +161,11 @@ for epoch in range(cfg["epochs"]):
     if patience_counter >= patience:
         print(f"Early stopping at epoch {epoch+1}")
         break
+
+    # Step LR schedulers
+    if use_cosine:
+        sched_G.step()
+        sched_D.step()
 
 # Save last model
 torch.save(D.state_dict(), "checkpoints/D_last.pth")
