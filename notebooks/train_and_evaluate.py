@@ -464,7 +464,7 @@ plt.show()
 print(f"Saved: {os.path.join(CKPT_DIR, 'training_metrics.png')}")
 
 # %% [markdown]
-# ## 8. Inference — Score All Test Data
+# ## 8. Inference — Multi-Signal Scoring
 
 # %%
 print("Loading test data (benign + attacks)...")
@@ -476,62 +476,111 @@ test_loader, test_ds = get_loader(
 print(f"  Total test samples: {len(test_ds.data):,}")
 print(f"  Test windows: {len(test_ds):,}")
 
-# Load best generator
+# Load best generator AND discriminator
 G_best = Generator(feat_dim, CONFIG["hidden_dim"], feat_dim,
                    CONFIG["num_layers"], CONFIG["dropout"]).to(device)
 G_best.load_state_dict(torch.load(os.path.join(CKPT_DIR, "best_G.pth"), map_location=device))
 G_best.eval()
 
-# ── Phase 1: per-feature error baselines on training (benign) data ──
-# Mean-MSE hides attacks that only differ in a few features because the
-# signal is diluted across all 77 features.  By computing mean and std
-# of per-feature error on benign data, we express test errors as z-scores.
-# Features with normally-low error produce large z-scores for even small
-# deviations, catching subtle attacks like Syn floods.
-TOP_K = 10  # number of most-anomalous features to average
+D_best = Discriminator(feat_dim, CONFIG["hidden_dim"],
+                       CONFIG["num_layers"], CONFIG["dropout"]).to(device)
+D_best.load_state_dict(torch.load(os.path.join(CKPT_DIR, "best_D.pth"), map_location=device))
+D_best.eval()
 
-print("Computing per-feature error baselines on training data...")
-# Use a non-shuffled training loader for deterministic baselines
+# ── Phase 1: Compute baselines on benign training data ──
+# We compute BOTH reconstruction error and D(x) on benign data so we can
+# normalise each signal to zero-mean unit-variance before combining.
+print("Computing baselines on training data...")
 baseline_loader, _ = get_loader(
     CONFIG["train_csv"], CONFIG["seq_len"], CONFIG["label_column"],
     CONFIG["batch_size"], shuffle=False, train_mode=True
 )
-train_feat_errors = []
+
+train_recon_scores = []
+train_d_scores = []
 with torch.no_grad():
     for x, _ in tqdm(baseline_loader, desc="Baseline"):
         x = x.to(device)
         x_hat = G_best(x)
-        fe = torch.mean((x - x_hat) ** 2, dim=1)  # (batch, features)
-        train_feat_errors.append(fe.cpu())
+        # Mean MSE per sample (mean over time and features)
+        recon = ((x - x_hat) ** 2).mean(dim=(1, 2))
+        d_score = D_best(x).squeeze(-1)
+        train_recon_scores.append(recon.cpu())
+        train_d_scores.append(d_score.cpu())
 
-train_feat_errors = torch.cat(train_feat_errors, dim=0)  # (N, features)
-feat_mu = train_feat_errors.mean(dim=0)       # (features,)
-feat_sigma = train_feat_errors.std(dim=0).clamp(min=1e-8)
-np.savez(os.path.join(CKPT_DIR, "feat_baselines.npz"),
-         mu=feat_mu.numpy(), sigma=feat_sigma.numpy())
-print(f"  Baselines saved ({feat_dim} features)")
+train_recon_all = torch.cat(train_recon_scores)
+train_d_all = torch.cat(train_d_scores)
+recon_mu, recon_sigma = train_recon_all.mean().item(), train_recon_all.std().item()
+d_mu, d_sigma = train_d_all.mean().item(), train_d_all.std().item()
 
-# ── Phase 2: score test data with feature-standardised top-k ──
-print("Running inference with feature-standardised scoring...")
-feat_mu_d = feat_mu.to(device)
-feat_sigma_d = feat_sigma.to(device)
+print(f"  Benign recon baseline: μ={recon_mu:.4f}, σ={recon_sigma:.4f}")
+print(f"  Benign D(x)  baseline: μ={d_mu:.4f}, σ={d_sigma:.4f}")
 
-scores = []
+# ── Phase 2: Score all test data ──
+print("Running inference...")
+recon_raw = []
+d_raw = []
 labels = []
 
 with torch.no_grad():
     for x, y in tqdm(test_loader, desc="Inference"):
         x = x.to(device)
         x_hat = G_best(x)
-        fe = torch.mean((x - x_hat) ** 2, dim=1)       # (batch, features)
-        z = (fe - feat_mu_d) / feat_sigma_d              # z-scores
-        topk, _ = torch.topk(z, k=TOP_K, dim=1)         # (batch, TOP_K)
-        score = topk.mean(dim=1).cpu().numpy()            # (batch,)
-        scores.extend(score)
+        recon = ((x - x_hat) ** 2).mean(dim=(1, 2)).cpu().numpy()
+        d_score = D_best(x).squeeze(-1).cpu().numpy()
+        recon_raw.extend(recon)
+        d_raw.extend(d_score)
         labels.extend(y.numpy())
 
-scores = np.array(scores)
+recon_raw = np.array(recon_raw)
+d_raw = np.array(d_raw)
 labels = np.array(labels)
+
+# Normalise to z-scores using benign baselines
+recon_z = (recon_raw - recon_mu) / max(recon_sigma, 1e-8)
+# Negate D: lower D(x) = more anomalous → higher anomaly score
+d_z = -(d_raw - d_mu) / max(d_sigma, 1e-8)
+
+# ── Phase 3: Compare scoring methods ──
+from sklearn.metrics import roc_auc_score as _auc
+
+candidates = {
+    "Mean MSE (raw)":           recon_raw,
+    "-D(x) (raw)":              -d_raw,
+    "Recon z-score":            recon_z,
+    "D z-score":                d_z,
+    "Recon_z + D_z (1:1)":     recon_z + d_z,
+    "0.7·Recon_z + 0.3·D_z":   0.7 * recon_z + 0.3 * d_z,
+    "0.5·Recon_z + 0.5·D_z":   0.5 * recon_z + 0.5 * d_z,
+    "0.3·Recon_z + 0.7·D_z":   0.3 * recon_z + 0.7 * d_z,
+    "max(Recon_z, D_z)":        np.maximum(recon_z, d_z),
+}
+
+print("\n" + "=" * 55)
+print("  Scoring Method Comparison")
+print("=" * 55)
+best_auc = 0
+best_name = None
+for name, s in candidates.items():
+    a = _auc(labels, s)
+    marker = ""
+    if a > best_auc:
+        best_auc = a
+        best_name = name
+        marker = " ◀ best"
+    print(f"  {name:35s} AUC = {a:.4f}{marker}")
+
+scores = candidates[best_name]
+print(f"\n  ➤ Using: {best_name} (AUC = {best_auc:.4f})")
+
+# Print score statistics for diagnosis
+for lbl, lbl_name in [(0, "Benign"), (1, "Attack")]:
+    mask = labels == lbl
+    r = recon_raw[mask]
+    d = d_raw[mask]
+    print(f"\n  {lbl_name} score stats:")
+    print(f"    Recon  — median={np.median(r):.2f}, mean={r.mean():.2f}, p95={np.percentile(r,95):.2f}")
+    print(f"    D(x)   — median={np.median(d):.2f}, mean={d.mean():.2f}, p5={np.percentile(d,5):.2f}")
 
 results_df = pd.DataFrame({"score": scores, "Label": labels})
 results_df.to_csv(os.path.join(CKPT_DIR, "inference_scores.csv"), index=False)

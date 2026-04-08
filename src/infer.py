@@ -1,6 +1,7 @@
 import yaml, torch, pandas as pd, numpy as np
 import os, sys
 from tqdm import tqdm
+from sklearn.metrics import roc_auc_score
 
 # Resolve project root (one level above this src/ file)
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -8,7 +9,7 @@ os.chdir(ROOT)
 sys.path.insert(0, os.path.join(ROOT, "src"))
 
 from dataset import get_loader
-from model import Generator
+from model import Generator, Discriminator
 
 cfg = yaml.safe_load(open("configs/config.yaml"))
 device = torch.device(cfg["device"])
@@ -16,7 +17,6 @@ device = torch.device(cfg["device"])
 hidden_dim = cfg.get("hidden_dim", 64)
 num_layers = cfg.get("num_layers", 2)
 dropout = cfg.get("dropout", 0.2)
-TOP_K = 10  # number of most-anomalous features to average
 
 # Load test data
 loader, _ = get_loader(cfg["test_csv"], cfg["seq_len"],
@@ -34,47 +34,75 @@ G = Generator(feat_dim, hidden_dim, feat_dim, num_layers, dropout).to(device)
 G.load_state_dict(torch.load("checkpoints/best_G.pth", map_location=device))
 G.eval()
 
-# ── Phase 1: per-feature error baselines on training (benign) data ──
-# Mean-MSE hides attacks that differ in only a few features because the
-# signal is diluted across all 77 features.  By computing the mean and
-# std of per-feature reconstruction error on benign data, we can express
-# test errors as z-scores.  Features that rarely have error on benign
-# data will produce large z-scores even for small absolute deviations,
-# catching subtle attacks like Syn floods.
-print("Computing per-feature error baselines on training data...")
-train_feat_errors = []
+D = Discriminator(feat_dim, hidden_dim, num_layers, dropout).to(device)
+D.load_state_dict(torch.load("checkpoints/best_D.pth", map_location=device))
+D.eval()
+
+# ── Phase 1: baselines on benign training data ──
+print("Computing baselines on training data...")
+train_recon_scores, train_d_scores = [], []
 with torch.no_grad():
     for x, _ in tqdm(train_loader, desc="Baseline"):
         x = x.to(device)
         x_hat = G(x)
-        fe = torch.mean((x - x_hat) ** 2, dim=1)  # (batch, features)
-        train_feat_errors.append(fe.cpu())
+        recon = ((x - x_hat) ** 2).mean(dim=(1, 2))
+        d_score = D(x).squeeze(-1)
+        train_recon_scores.append(recon.cpu())
+        train_d_scores.append(d_score.cpu())
 
-train_feat_errors = torch.cat(train_feat_errors, dim=0)  # (N, features)
-feat_mu = train_feat_errors.mean(dim=0)       # (features,)
-feat_sigma = train_feat_errors.std(dim=0).clamp(min=1e-8)  # (features,)
-np.savez("checkpoints/feat_baselines.npz",
-         mu=feat_mu.numpy(), sigma=feat_sigma.numpy())
-print(f"  Baselines saved ({feat_dim} features)")
+train_recon_all = torch.cat(train_recon_scores)
+train_d_all = torch.cat(train_d_scores)
+recon_mu, recon_sigma = train_recon_all.mean().item(), train_recon_all.std().item()
+d_mu, d_sigma = train_d_all.mean().item(), train_d_all.std().item()
+print(f"  Benign recon baseline: μ={recon_mu:.4f}, σ={recon_sigma:.4f}")
+print(f"  Benign D(x)  baseline: μ={d_mu:.4f}, σ={d_sigma:.4f}")
 
-# ── Phase 2: score test data with feature-standardised top-k ──
-print("Running inference with feature-standardised scoring...")
-feat_mu_d = feat_mu.to(device)
-feat_sigma_d = feat_sigma.to(device)
-scores, labels = [], []
-
+# ── Phase 2: score test data ──
+print("Running inference...")
+recon_raw, d_raw, labels = [], [], []
 with torch.no_grad():
     for x, y in tqdm(loader, desc="Inference"):
         x = x.to(device)
         x_hat = G(x)
-        fe = torch.mean((x - x_hat) ** 2, dim=1)       # (batch, features)
-        z = (fe - feat_mu_d) / feat_sigma_d              # z-scores
-        topk, _ = torch.topk(z, k=TOP_K, dim=1)         # (batch, TOP_K)
-        score = topk.mean(dim=1).cpu().numpy()            # (batch,)
-        scores.extend(score)
+        recon = ((x - x_hat) ** 2).mean(dim=(1, 2)).cpu().numpy()
+        d_score = D(x).squeeze(-1).cpu().numpy()
+        recon_raw.extend(recon)
+        d_raw.extend(d_score)
         labels.extend(y.numpy())
+
+recon_raw = np.array(recon_raw)
+d_raw = np.array(d_raw)
+labels = np.array(labels)
+
+recon_z = (recon_raw - recon_mu) / max(recon_sigma, 1e-8)
+d_z = -(d_raw - d_mu) / max(d_sigma, 1e-8)
+
+# ── Phase 3: compare scoring methods ──
+candidates = {
+    "Mean MSE (raw)":           recon_raw,
+    "-D(x) (raw)":              -d_raw,
+    "Recon_z + D_z (1:1)":     recon_z + d_z,
+    "0.7·Recon_z + 0.3·D_z":   0.7 * recon_z + 0.3 * d_z,
+    "0.5·Recon_z + 0.5·D_z":   0.5 * recon_z + 0.5 * d_z,
+    "0.3·Recon_z + 0.7·D_z":   0.3 * recon_z + 0.7 * d_z,
+    "max(Recon_z, D_z)":        np.maximum(recon_z, d_z),
+}
+
+print("\n" + "=" * 55)
+print("  Scoring Method Comparison")
+print("=" * 55)
+best_auc, best_name = 0, None
+for name, s in candidates.items():
+    a = roc_auc_score(labels, s)
+    marker = ""
+    if a > best_auc:
+        best_auc, best_name = a, name
+        marker = " ◀ best"
+    print(f"  {name:35s} AUC = {a:.4f}{marker}")
+
+scores = candidates[best_name]
+print(f"\n  ➤ Using: {best_name} (AUC = {best_auc:.4f})")
 
 pd.DataFrame({"score": scores, "Label": labels}).to_csv(
     "checkpoints/inference_scores.csv", index=False)
-
 print(f"Inference complete. Scored {len(scores)} samples.")
