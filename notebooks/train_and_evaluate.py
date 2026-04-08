@@ -82,7 +82,7 @@ CONFIG = {
     "test_csv": os.path.join(DATA_DIR, "merged.csv"),
     "label_column": "Label",
     "seq_len": 20,
-    "batch_size": 256,
+    "batch_size": 512,
     "epochs": 200,
     "lr_G": 1e-4,
     "lr_D": 5e-5,
