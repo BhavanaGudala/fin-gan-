@@ -476,38 +476,58 @@ test_loader, test_ds = get_loader(
 print(f"  Total test samples: {len(test_ds.data):,}")
 print(f"  Test windows: {len(test_ds):,}")
 
-# Load best models
-D_best = Discriminator(feat_dim, CONFIG["hidden_dim"],
-                       CONFIG["num_layers"], CONFIG["dropout"]).to(device)
-D_best.load_state_dict(torch.load(os.path.join(CKPT_DIR, "best_D.pth"), map_location=device))
-D_best.eval()
-
+# Load best generator
 G_best = Generator(feat_dim, CONFIG["hidden_dim"], feat_dim,
                    CONFIG["num_layers"], CONFIG["dropout"]).to(device)
 G_best.load_state_dict(torch.load(os.path.join(CKPT_DIR, "best_G.pth"), map_location=device))
 G_best.eval()
 
-# Score all windows
+# ── Phase 1: per-feature error baselines on training (benign) data ──
+# Mean-MSE hides attacks that only differ in a few features because the
+# signal is diluted across all 77 features.  By computing mean and std
+# of per-feature error on benign data, we express test errors as z-scores.
+# Features with normally-low error produce large z-scores for even small
+# deviations, catching subtle attacks like Syn floods.
+TOP_K = 10  # number of most-anomalous features to average
+
+print("Computing per-feature error baselines on training data...")
+# Use a non-shuffled training loader for deterministic baselines
+baseline_loader, _ = get_loader(
+    CONFIG["train_csv"], CONFIG["seq_len"], CONFIG["label_column"],
+    CONFIG["batch_size"], shuffle=False, train_mode=True
+)
+train_feat_errors = []
+with torch.no_grad():
+    for x, _ in tqdm(baseline_loader, desc="Baseline"):
+        x = x.to(device)
+        x_hat = G_best(x)
+        fe = torch.mean((x - x_hat) ** 2, dim=1)  # (batch, features)
+        train_feat_errors.append(fe.cpu())
+
+train_feat_errors = torch.cat(train_feat_errors, dim=0)  # (N, features)
+feat_mu = train_feat_errors.mean(dim=0)       # (features,)
+feat_sigma = train_feat_errors.std(dim=0).clamp(min=1e-8)
+np.savez(os.path.join(CKPT_DIR, "feat_baselines.npz"),
+         mu=feat_mu.numpy(), sigma=feat_sigma.numpy())
+print(f"  Baselines saved ({feat_dim} features)")
+
+# ── Phase 2: score test data with feature-standardised top-k ──
+print("Running inference with feature-standardised scoring...")
+feat_mu_d = feat_mu.to(device)
+feat_sigma_d = feat_sigma.to(device)
+
 scores = []
 labels = []
 
-print("Running inference...")
 with torch.no_grad():
     for x, y in tqdm(test_loader, desc="Inference"):
         x = x.to(device)
-        
         x_hat = G_best(x)
-        # Reconstruction Error over the feature dimension
-        recon_error = torch.mean((x - x_hat) ** 2, dim=-1)
-        recon_error = recon_error.mean(dim=1).cpu().numpy()
-        
-        # Anomaly score = reconstruction error only.
-        # The critic score is unreliable when D(real) drifts negative during
-        # WGAN training — negating it inverts benign scores upward, poisoning
-        # the combined signal.  Pure recon error is the natural anomaly
-        # metric for an autoencoder: attacks the AE has never seen produce
-        # large reconstruction error; benign data it was trained on does not.
-        scores.extend(recon_error)
+        fe = torch.mean((x - x_hat) ** 2, dim=1)       # (batch, features)
+        z = (fe - feat_mu_d) / feat_sigma_d              # z-scores
+        topk, _ = torch.topk(z, k=TOP_K, dim=1)         # (batch, TOP_K)
+        score = topk.mean(dim=1).cpu().numpy()            # (batch,)
+        scores.extend(score)
         labels.extend(y.numpy())
 
 scores = np.array(scores)

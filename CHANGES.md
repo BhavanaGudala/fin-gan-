@@ -432,17 +432,87 @@ Patience of 20 gives the model enough runway to find these improvements without 
 
 ---
 
+## 8. Phase 2b Results
+
+Phase 2b (recon_weight=100, hidden_dim=64) trained to epoch 40 (early stop at patience 20). Recon loss dropped from 0.80 → 0.63, but **ROC-AUC remained at 0.793**. This confirmed the bottleneck is not training quality — it's the scoring method.
+
+---
+
+## 9. Phase 3 — Feature-Standardised Scoring (`src/infer.py`, `notebooks/train_and_evaluate.py`)
+
+### 9.1 Diagnosis: Why Mean-MSE Has a Ceiling
+
+Per-attack detection rates revealed the problem:
+
+| Attack Type | Count | Detection Rate |
+|---|---|---|
+| DrDoS_NTP | 121K | 99.3% |
+| TFTP | 99K | 100% |
+| **Syn** | **49K** | **4.6%** |
+| **UDP-lag** | **8.9K** | **22.3%** |
+| **WebDDoS** | **51** | **23.5%** |
+
+Syn attacks (49K samples — 15% of attacks) differ from benign in only a small subset of the 77 features. When MSE is averaged across **all** features, the anomalous features are diluted by ~70 normal-looking features. Example:
+
+- Feature A (e.g. SYN flag count): benign error = 0.001, Syn attack error = 0.01 → **10× deviation**
+- Feature B (e.g. flow duration): benign error = 5.0, Syn attack error = 5.2 → **1.04× deviation**
+
+Mean-MSE weights Feature B ~5000× more than Feature A in absolute terms, completely burying the signal from Feature A. This is why AUC plateaued at 0.793 regardless of training improvements.
+
+### 9.2 Solution: Feature-Standardised Top-K Scoring
+
+**Two-phase inference:**
+
+**Phase 1 — Compute baselines on training (benign) data:**
+```python
+train_feat_errors = []
+for x, _ in train_loader:
+    x_hat = G(x)
+    fe = torch.mean((x - x_hat) ** 2, dim=1)  # (batch, features)
+    train_feat_errors.append(fe)
+feat_mu    = train_feat_errors.mean(dim=0)   # (77,)
+feat_sigma = train_feat_errors.std(dim=0)    # (77,)
+```
+
+**Phase 2 — Score test data with z-scores:**
+```python
+fe = torch.mean((x - x_hat) ** 2, dim=1)   # (batch, 77)
+z  = (fe - feat_mu) / feat_sigma            # z-scores per feature
+topk, _ = torch.topk(z, k=10, dim=1)       # top-10 most anomalous
+score   = topk.mean(dim=1)                  # final anomaly score
+```
+
+**Why this works:**
+- Each feature's error is expressed as a **z-score** (standard deviations from its benign baseline)
+- A feature with benign mean error 0.001 ± 0.0005 that produces error 0.003 on a Syn attack gives z = (0.003 − 0.001) / 0.0005 = **4.0** — clearly anomalous
+- A feature with benign mean error 5.0 ± 2.0 that produces error 5.2 on a Syn attack gives z = (5.2 − 5.0) / 2.0 = **0.1** — negligible
+- Top-K (K=10) selects the 10 most anomalous features, focusing on where the attack actually deviates rather than averaging over all 77
+
+### 9.3 Files Changed
+
+- `src/infer.py` — Replaced mean-MSE scoring with two-phase feature-standardised scoring. Removed Discriminator loading (not used for scoring). Added baseline computation on training data and `feat_baselines.npz` checkpoint.
+- `notebooks/train_and_evaluate.py` — Same scoring changes in inference section (section 8). Creates separate `baseline_loader` (non-shuffled) for deterministic baseline computation.
+
+### 9.4 Key Properties
+
+- **No retraining required** — only the inference/scoring pipeline changes
+- **Baselines saved** to `checkpoints/feat_baselines.npz` for reproducibility
+- **TOP_K=10** selects ~13% of 77 features — robust to outlier features while still amplifying multi-feature anomalies
+
+---
+
 ## Summary of All Phases
 
-| Metric | Baseline (v0) | Phase 1 | Phase 2a | Phase 2b | Paper |
-|---|---|---|---|---|---|
-| **ROC-AUC** | 0.467 | 0.789 | 0.793 | TBD | 0.9963 |
-| **Anomaly Score** | 0.9·recon + 0.1·(-D) | recon only | recon only | recon only | D(x) |
-| **Early Stop Metric** | critic loss | critic loss | recon loss | recon loss | — |
-| **recon_weight** | 10.0 | 10.0 | 1.0 | **100.0** | — |
-| **hidden_dim** | 128 | 128 | 128 | **64** | — |
-| **Grad clipping** | no | no | yes (1.0) | yes (1.0) | — |
-| **patience** | 10 | 10 | 15 | **20** | — |
-| **Architecture** | GRU AE-WGAN-GP | same | same | same | TCN/SA WGAN |
+| Metric | Baseline (v0) | Phase 1 | Phase 2a | Phase 2b | Phase 3 | Paper |
+|---|---|---|---|---|---|---|
+| **ROC-AUC** | 0.467 | 0.789 | 0.793 | 0.793 | TBD | 0.9963 |
+| **Anomaly Score** | 0.9·recon + 0.1·(-D) | mean MSE | mean MSE | mean MSE | **z-score top-10** | D(x) |
+| **Syn Detection** | — | — | — | 4.6% | TBD | — |
+| **Early Stop Metric** | critic loss | critic loss | recon loss | recon loss | recon loss | — |
+| **recon_weight** | 10.0 | 10.0 | 1.0 | 100.0 | 100.0 | — |
+| **hidden_dim** | 128 | 128 | 128 | 64 | 64 | — |
+| **Grad clipping** | no | no | yes (1.0) | yes (1.0) | yes (1.0) | — |
+| **patience** | 10 | 10 | 15 | 20 | 20 | — |
+| **Architecture** | GRU AE-WGAN-GP | same | same | same | same | TCN/SA WGAN |
 
-**Note:** Phase 2b uses the GRU-based AE-WGAN-GP architecture, which is fundamentally different from the paper's TCN/Self-Attention approach. The changes focus on making the autoencoder paradigm work correctly by ensuring the reconstruction objective actually drives learning.
+**Note:** Phase 3 changes only the inference scoring pipeline — no retraining needed. The model checkpoints from Phase 2b are reused directly.
