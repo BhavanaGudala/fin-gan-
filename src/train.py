@@ -117,7 +117,6 @@ for epoch in range(cfg["epochs"]):
         fake_score = D(fake_x.detach())
 
         gp = gradient_penalty(D, x, fake_x.detach(), device)
-        gp = torch.clamp(gp, max=1.0)  # cap GP to prevent runaway drift
         d_loss = -(torch.mean(real_score) - torch.mean(fake_score)) + gp_lambda * gp
 
         opt_D.zero_grad()

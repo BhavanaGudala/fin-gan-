@@ -90,8 +90,8 @@ CONFIG = {
     "hidden_dim": 128,
     "num_layers": 2,
     "dropout": 0.2,
-    "n_critic": 5,
-    "gp_lambda": 10,
+    "n_critic": 3,
+    "gp_lambda": 20,
     "patience": 40,
     "recon_weight": 100.0,
     "use_cosine_lr": True,
@@ -309,6 +309,10 @@ class Discriminator(nn.Module):
         super().__init__()
         self.gru = nn.GRU(in_dim, hidden, num_layers=num_layers, batch_first=True,
                           bidirectional=True, dropout=dropout if num_layers > 1 else 0.0)
+        # Spectral norm on all GRU weight matrices to constrain Lipschitz constant
+        for name, _ in list(self.gru.named_parameters()):
+            if 'weight' in name:
+                spectral_norm(self.gru, name)
         self.norm = nn.LayerNorm(hidden * 2)
         self.dropout = nn.Dropout(dropout)
         self.attention = AttentionPooling(hidden * 2)
@@ -462,7 +466,6 @@ for epoch in range(CONFIG["epochs"]):
         
         # GP must run in float32 (needs double backward)
         gp = gradient_penalty(D, x, fake_x.detach(), device)
-        gp = torch.clamp(gp, max=1.0)  # cap GP to prevent runaway drift
         d_loss = -(torch.mean(real_score) - torch.mean(fake_score)) + gp_lambda * gp
         
         opt_D.zero_grad()

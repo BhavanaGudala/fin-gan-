@@ -1152,3 +1152,64 @@ Remaining weak spots: Syn (97.98%), UDP (98.72%), UDPLag (89.09% but only 55 sam
 | Phase 7+7b | 10 | 0.9842 | Recon_z + D_z | Capacity + rate features + speed |
 | Phase 8 | 11 | 0.9999* | Latent Mahalanobis | Scoring overhaul (*eval bugs) |
 | **Phase 9** | **12** | **0.9999** | **Learned Fusion (CV)** | **Eval bug fixes, validated** |
+
+---
+
+## 17. Phase 10 — Critic Stability Fix (Post-Run 12)
+
+Run 12 confirmed AUC=0.9999, but the training dynamics remain unhealthy:
+
+| Problem | Observed (Run 12) | Target |
+|---|---|---|
+| D(real) vs D(fake) | 23 vs -23 (gap=46, diverging) | Should converge |
+| GP drift | 0.08 → 0.82 monotonically | Should stay < 0.1 |
+| Generator loss | Flat ~105 after epoch 20 | Should gradually decrease |
+| D(x) as anomaly signal | AUC = 0.7408 | Should be useful |
+
+**Root cause:** The critic overpowers the generator. Three factors combine:
+1. `gp_lambda=10` is too weak to enforce the Lipschitz constraint (Run 10 with gp_lambda=20 had GP 0.05→0.32 — 60% less drift)
+2. `n_critic=5` gives D five updates per G update — too many when D is already dominant
+3. Spectral norm only on D's FC layer — the GRU backbone (8 weight matrices, ~900K params) is completely unconstrained
+4. `recon_weight=100` means G's loss is ~100×recon + ~5×critic → G barely tries to fool D
+
+### 17.1 Revert gp_lambda: 10 → 20
+
+Phase 8 lowered gp_lambda from 20→10, hoping a softer penalty would let D be more expressive. Instead it made GP drift 2.5× worse (0.82 vs 0.32). Reverting to 20 restores the stronger Lipschitz enforcement that worked in Run 10.
+
+### 17.2 Reduce n_critic: 5 → 3
+
+With 5 critic steps per generator step, D trains on 5× more gradient updates than G. When D is already too powerful (D(real)=23, D(fake)=-23), fewer critic updates reduce the imbalance. Standard WGAN-GP often uses n_critic=5, but with our high recon_weight=100 (which further weakens G's adversarial signal), 3 is more balanced.
+
+### 17.3 Remove Ineffective GP Clamp
+
+`torch.clamp(gp, max=1.0)` was added in Phase 8 to prevent "runaway drift." But GP values never exceeded 1.0 — the drift was gradual (0.08→0.82), always below the clamp. The line had zero effect and added misleading code.
+
+### 17.4 Spectral Normalization on D's GRU Weights
+
+**Before:** Only `self.fc` (1 weight matrix) was spectrally normalized.
+**After:** All 8 GRU weight matrices + FC are spectrally normalized (9 total).
+
+```python
+# Apply to all GRU weights (2 layers × 2 directions × 2 matrices = 8)
+for name, _ in list(self.gru.named_parameters()):
+    if 'weight' in name:
+        spectral_norm(self.gru, name)
+```
+
+Spectral normalization constrains each weight matrix's largest singular value to 1, bounding the Lipschitz constant of each layer. Combined with GP (which penalizes the overall gradient norm), this provides tighter control over D's output range. The D(real)=23 / D(fake)=-23 divergence should shrink significantly.
+
+### 17.5 Expected Impact
+
+| Change | Effect on GP drift | Effect on D divergence |
+|---|---|---|
+| gp_lambda 10→20 | Strong (proven: 0.32 vs 0.82) | Moderate |
+| n_critic 5→3 | Moderate (fewer D updates) | Strong (D less dominant) |
+| GRU spectral norm | Moderate (bounds weight norms) | Strong (bounds output range) |
+| Remove GP clamp | None (was already no-op) | None |
+
+### 17.6 Files Changed
+
+- `configs/config.yaml` — `gp_lambda: 20`, `n_critic: 3`
+- `src/model.py` — Spectral norm on all D GRU weight matrices
+- `src/train.py` — Removed `torch.clamp(gp, max=1.0)`
+- `notebooks/train_and_evaluate.py` — All above mirrored

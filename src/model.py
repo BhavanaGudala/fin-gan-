@@ -72,6 +72,10 @@ class Discriminator(nn.Module):
             bidirectional=True,
             dropout=dropout if num_layers > 1 else 0.0
         )
+        # Spectral norm on all GRU weight matrices to constrain Lipschitz constant
+        for name, _ in list(self.gru.named_parameters()):
+            if 'weight' in name:
+                spectral_norm(self.gru, name)
         # bidirectional doubles the output dim
         self.norm = nn.LayerNorm(hidden * 2)
         self.dropout = nn.Dropout(dropout)
