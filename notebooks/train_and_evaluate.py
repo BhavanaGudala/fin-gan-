@@ -82,7 +82,7 @@ CONFIG = {
     "test_csv": os.path.join(DATA_DIR, "merged.csv"),
     "label_column": "Label",
     "seq_len": 20,
-    "batch_size": 1024,
+    "batch_size": 256,
     "epochs": 200,
     "lr_G": 1e-4,
     "lr_D": 5e-5,
@@ -642,7 +642,7 @@ with torch.no_grad():
         recon_raw.extend(recon)
         d_raw.extend(d_score)
         test_per_feat.append(per_feat)
-        labels.extend(y.numpy())
+        labels.extend(y.cpu().numpy())
 
 recon_raw = np.array(recon_raw)
 d_raw = np.array(d_raw)
