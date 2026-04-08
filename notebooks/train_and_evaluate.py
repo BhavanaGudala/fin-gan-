@@ -101,48 +101,99 @@ for k, v in CONFIG.items():
 # ## 3. Dataset
 
 # %%
+# Features that are all-zero / constant across the CICDDoS2019 dataset.
+DROP_FEATURES = [
+    "Bwd PSH Flags", "Fwd URG Flags", "Bwd URG Flags",
+    "FIN Flag Count", "PSH Flag Count", "ECE Flag Count",
+    "Fwd Avg Bytes/Bulk", "Fwd Avg Packets/Bulk", "Fwd Avg Bulk Rate",
+    "Bwd Avg Bytes/Bulk", "Bwd Avg Packets/Bulk", "Bwd Avg Bulk Rate",
+]
+
+# Heavy-tailed features (skew > 10) that benefit from log1p transform.
+LOG_FEATURES = [
+    "Fwd Act Data Packets", "Fwd Packets Length Total", "Subflow Fwd Bytes",
+    "Total Backward Packets", "Subflow Bwd Packets", "Total Fwd Packets",
+    "Subflow Fwd Packets", "Subflow Bwd Bytes", "Bwd Packets Length Total",
+    "Flow IAT Min", "Fwd IAT Min", "Packet Length Variance",
+    "Flow Duration", "Fwd IAT Total", "Flow IAT Max", "Fwd IAT Max",
+    "Fwd IAT Mean", "Flow IAT Mean", "Flow IAT Std", "Fwd IAT Std",
+    "Idle Max", "Idle Std", "Idle Mean", "Bwd IAT Mean", "Bwd IAT Std",
+    "Bwd IAT Max", "Bwd IAT Total",
+    "Fwd Packet Length Max", "Bwd Packet Length Max",
+    "Packet Length Mean", "Avg Packet Size",
+]
+
 class FlowDataset(Dataset):
     """
     Network flow dataset with sliding window.
-    - train_mode=True: keeps only benign rows, computes & saves normalization stats
-    - train_mode=False: uses all rows, loads saved normalization stats
+    - train_mode=True: 80% benign split, log-transform, compute & save norm stats
+    - train_mode=False: 20% held-out benign + all attacks, load saved stats
     """
-    def __init__(self, csv_path, seq_len, label_col, train_mode=False, norm_path=None):
+    def __init__(self, csv_path, seq_len, label_col, train_mode=False, norm_path=None,
+                 split_seed=42, split_ratio=0.8):
         df = pd.read_csv(csv_path)
-        
+
         # Convert string labels to binary (handles both object and StringDtype)
         if pd.api.types.is_string_dtype(df[label_col]) or df[label_col].dtype == object:
             df[label_col] = (df[label_col] != "Benign").astype(int)
-        
+
         if train_mode:
-            df = df[df[label_col] == 0]
-            if len(df) == 0:
+            benign = df[df[label_col] == 0]
+            if len(benign) == 0:
                 raise ValueError(f"No benign samples found in '{csv_path}'.")
-        
+            # 80/20 split on benign (deterministic)
+            rng = np.random.RandomState(split_seed)
+            indices = rng.permutation(len(benign))
+            n_train = int(len(benign) * split_ratio)
+            train_idx = indices[:n_train]
+            df = benign.iloc[train_idx].reset_index(drop=True)
+        else:
+            # Test: held-out 20% benign + all attacks
+            benign_mask = df[label_col] == 0
+            benign_df = df[benign_mask]
+            attack_df = df[~benign_mask]
+            rng = np.random.RandomState(split_seed)
+            indices = rng.permutation(len(benign_df))
+            n_train = int(len(benign_df) * split_ratio)
+            test_idx = indices[n_train:]
+            test_benign = benign_df.iloc[test_idx].reset_index(drop=True)
+            df = pd.concat([test_benign, attack_df], ignore_index=True)
+
         self.labels = df[label_col].values
         df = df.drop(columns=[label_col])
-        
+
         df = df.select_dtypes(include=[np.number])
         df = df.replace([np.inf, -np.inf], np.nan).fillna(0.0)
-        
+
+        # Drop constant/useless features
+        drop_cols = [c for c in DROP_FEATURES if c in df.columns]
+        if drop_cols:
+            df = df.drop(columns=drop_cols)
+
+        self.feature_names = list(df.columns)
         data = df.values.astype(np.float32)
-        
+
+        # Log-transform heavy-tailed features: sign(x) * log1p(|x|)
+        log_mask = np.array([c in LOG_FEATURES for c in self.feature_names])
+        self._log_mask = log_mask
+        if log_mask.any():
+            data[:, log_mask] = np.sign(data[:, log_mask]) * np.log1p(np.abs(data[:, log_mask]))
+
         norm_file = norm_path or os.path.join(CKPT_DIR, "norm.npz")
         if train_mode:
             self.mean = data.mean(axis=0)
             self.std = data.std(axis=0) + 1e-8
-            np.savez(norm_file, mean=self.mean, std=self.std)
+            np.savez(norm_file, mean=self.mean, std=self.std, log_mask=log_mask)
         else:
             stats = np.load(norm_file)
             self.mean, self.std = stats["mean"], stats["std"]
-        
+
         self.data = (data - self.mean) / self.std
         self.seq_len = seq_len
-        self.feature_names = list(df.columns)
-    
+
     def __len__(self):
         return len(self.data) - self.seq_len + 1
-    
+
     def __getitem__(self, idx):
         x = self.data[idx:idx + self.seq_len]
         y = self.labels[idx + self.seq_len - 1]

@@ -2,9 +2,36 @@ import pandas as pd
 import numpy as np
 import torch
 from torch.utils.data import Dataset, DataLoader
+import os
+
+# Features that are all-zero / constant across the CICDDoS2019 dataset.
+# These contribute only noise to reconstruction error.
+DROP_FEATURES = [
+    "Bwd PSH Flags", "Fwd URG Flags", "Bwd URG Flags",
+    "FIN Flag Count", "PSH Flag Count", "ECE Flag Count",
+    "Fwd Avg Bytes/Bulk", "Fwd Avg Packets/Bulk", "Fwd Avg Bulk Rate",
+    "Bwd Avg Bytes/Bulk", "Bwd Avg Packets/Bulk", "Bwd Avg Bulk Rate",
+]
+
+# Heavy-tailed features (skew > 10) that benefit from log1p transform.
+# Raw z-score normalization is ineffective on these distributions.
+LOG_FEATURES = [
+    "Fwd Act Data Packets", "Fwd Packets Length Total", "Subflow Fwd Bytes",
+    "Total Backward Packets", "Subflow Bwd Packets", "Total Fwd Packets",
+    "Subflow Fwd Packets", "Subflow Bwd Bytes", "Bwd Packets Length Total",
+    "Flow IAT Min", "Fwd IAT Min", "Packet Length Variance",
+    "Flow Duration", "Fwd IAT Total", "Flow IAT Max", "Fwd IAT Max",
+    "Fwd IAT Mean", "Flow IAT Mean", "Flow IAT Std", "Fwd IAT Std",
+    "Idle Max", "Idle Std", "Idle Mean", "Bwd IAT Mean", "Bwd IAT Std",
+    "Bwd IAT Max", "Bwd IAT Total",
+    "Fwd Packet Length Max", "Bwd Packet Length Max",
+    "Packet Length Mean", "Avg Packet Size",
+]
+
 
 class FlowDataset(Dataset):
-    def __init__(self, csv_path, seq_len, label_col, train_mode=False):
+    def __init__(self, csv_path, seq_len, label_col, train_mode=False,
+                 split_seed=42, split_ratio=0.8):
         df = pd.read_csv(csv_path)
 
         # Handle both object dtype and pandas StringDtype (ArrowDtype etc.)
@@ -12,12 +39,31 @@ class FlowDataset(Dataset):
             df[label_col] = (df[label_col] != "Benign").astype(int)
 
         if train_mode:
-            df = df[df[label_col] == 0]   # Benign only
-            if len(df) == 0:
+            benign = df[df[label_col] == 0]
+            if len(benign) == 0:
                 raise ValueError(
                     f"No benign samples found in '{csv_path}'. "
                     f"Check that the label column '{label_col}' contains 'Benign' entries."
                 )
+            # 80/20 split on benign samples (deterministic via seed)
+            rng = np.random.RandomState(split_seed)
+            indices = rng.permutation(len(benign))
+            n_train = int(len(benign) * split_ratio)
+            train_idx = indices[:n_train]
+            df = benign.iloc[train_idx].reset_index(drop=True)
+        else:
+            # For test: use ALL data (benign + attacks),
+            # but exclude training benign to avoid data leakage
+            benign_mask = df[label_col] == 0
+            benign_df = df[benign_mask]
+            attack_df = df[~benign_mask]
+            # Reproduce same split to identify held-out benign
+            rng = np.random.RandomState(split_seed)
+            indices = rng.permutation(len(benign_df))
+            n_train = int(len(benign_df) * split_ratio)
+            test_idx = indices[n_train:]
+            test_benign = benign_df.iloc[test_idx].reset_index(drop=True)
+            df = pd.concat([test_benign, attack_df], ignore_index=True)
 
         self.labels = df[label_col].values
         df = df.drop(columns=[label_col])
@@ -25,12 +71,27 @@ class FlowDataset(Dataset):
         df = df.select_dtypes(include=[np.number])
         df = df.replace([np.inf, -np.inf], np.nan).fillna(0.0)
 
-        data = df.values.astype(np.float32) #conversion dataframes to arrays
+        # Drop constant/useless features
+        drop_cols = [c for c in DROP_FEATURES if c in df.columns]
+        if drop_cols:
+            df = df.drop(columns=drop_cols)
+
+        self.feature_names = df.columns.tolist()
+
+        data = df.values.astype(np.float32)
+
+        # Log-transform heavy-tailed features before normalization.
+        # sign(x) * log1p(|x|) preserves sign for negative values.
+        log_mask = np.array([c in LOG_FEATURES for c in self.feature_names])
+        self._log_mask = log_mask
+        if log_mask.any():
+            data[:, log_mask] = np.sign(data[:, log_mask]) * np.log1p(np.abs(data[:, log_mask]))
 
         if train_mode:
             self.mean = data.mean(axis=0)
             self.std = data.std(axis=0) + 1e-8
-            np.savez("checkpoints/norm.npz", mean=self.mean, std=self.std)
+            np.savez("checkpoints/norm.npz", mean=self.mean, std=self.std,
+                     log_mask=log_mask)
         else:
             stats = np.load("checkpoints/norm.npz")
             self.mean, self.std = stats["mean"], stats["std"]

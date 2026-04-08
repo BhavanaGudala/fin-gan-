@@ -542,3 +542,58 @@ In Phase 1, we removed D(x) from scoring because `D(real)` drifted to −25, mak
 | **Architecture** | GRU AE-WGAN-GP | same | same | same | same | same | TCN/SA WGAN |
 
 **Note:** Phase 4 changes only the inference scoring pipeline — no retraining needed. The model checkpoints from Phase 2b are reused directly. The auto-selection uses labeled test data to pick the best method, which is valid for research evaluation but would need a validation split for production deployment.
+
+---
+
+## 11. Phase 5 — Data Pipeline Overhaul (`src/dataset.py`)
+
+Three preprocessing improvements based on feature-level analysis of the CICDDoS2019 dataset.
+
+### 11.1 Proper Train/Test Split (data leakage fix)
+
+**Before:** Same `merged.csv` used for both training and testing. All test benign was seen during training → inflated benign baseline, deflated anomaly contrast.
+
+**After:** Deterministic 80/20 split on benign samples (seed=42).
+- **Train:** 80% of benign (~78K flows) — model only sees these during training.
+- **Test:** held-out 20% benign (~20K) + all attacks (~334K) — no overlap with training data.
+
+```python
+# In train_mode=True:
+rng = np.random.RandomState(split_seed)
+indices = rng.permutation(len(benign))
+n_train = int(len(benign) * split_ratio)
+train_idx = indices[:n_train]
+
+# In train_mode=False:
+test_idx = indices[n_train:]  # complement of training set
+test_benign = benign_df.iloc[test_idx]
+df = pd.concat([test_benign, attack_df])
+```
+
+### 11.2 Feature Selection — Drop 12 Constant/Useless Features
+
+Analysis showed 12 features are all-zero across the entire benign training set. These contribute only noise to reconstruction error, diluting the signal from informative features.
+
+**Dropped features (77 → 65):**
+- Flag counts: `Bwd PSH Flags`, `Fwd URG Flags`, `Bwd URG Flags`, `FIN Flag Count`, `PSH Flag Count`, `ECE Flag Count`
+- Bulk statistics: `Fwd Avg Bytes/Bulk`, `Fwd Avg Packets/Bulk`, `Fwd Avg Bulk Rate`, `Bwd Avg Bytes/Bulk`, `Bwd Avg Packets/Bulk`, `Bwd Avg Bulk Rate`
+
+### 11.3 Log-Transform Heavy-Tailed Features
+
+Many CICDDoS features have extreme positive skewness (up to 230+). Standard z-score normalization is ineffective on such distributions — outliers dominate the scale.
+
+**Transform:** `sign(x) * log1p(|x|)` applied before z-score normalization.
+
+Applied to 31 features with skewness > 10, including:
+- Packet/byte counts: `Fwd Packets Length Total` (skew=230), `Total Backward Packets` (skew=206)
+- IAT features: `Flow IAT Min` (skew=66), `Fwd IAT Min` (skew=65)
+- Length statistics: `Packet Length Variance` (skew=57)
+
+**Why this helps:** Log-transform compresses the extreme tails, making z-score normalization meaningful. Features like `ACK Flag Count` (Cohen's d=2.75 for Syn) and `Flow IAT Mean` (d=1.67) become properly scaled, allowing the reconstruction error to capture attack-vs-benign differences instead of being dominated by noisy features.
+
+### 11.4 Expected Impact
+
+These changes require **full retraining** (new feature count, new normalization stats). Expected improvements:
+- **Data leakage fix** → benign reconstruction baseline becomes tighter (model hasn't memorised test benign)
+- **Feature selection** → reconstruction error concentrates on 65 informative features instead of 77 (12 of which were pure noise)
+- **Log-transform** → GRU can learn meaningful temporal patterns on properly-scaled features; Syn/UDP-lag distinguishing features (IAT, ACK flags) become well-conditioned
