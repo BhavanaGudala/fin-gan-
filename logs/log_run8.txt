@@ -1,0 +1,446 @@
+Running locally | Data: /kaggle/working/fin-gan-/notebooks/../data
+Using GPU: Tesla T4
+Configuration:
+  train_csv: /kaggle/working/fin-gan-/notebooks/../data/merged.csv
+  test_csv: /kaggle/working/fin-gan-/notebooks/../data/merged.csv
+  label_column: Label
+  seq_len: 10
+  batch_size: 512
+  epochs: 100
+  lr: 0.0001
+  noise_dim: 32
+  hidden_dim: 64
+  num_layers: 2
+  dropout: 0.2
+  n_critic: 5
+  gp_lambda: 10
+  patience: 20
+  recon_weight: 100.0
+Loading training data (benign only)...
+  Benign samples: 78,264
+  Features: 65
+  Windows: 78,255
+  Batches/epoch: 153
+  Feature names: ['Protocol', 'Flow Duration', 'Total Fwd Packets', 'Total Backward Packets', 'Fwd Packets Length Total']... (65 total)
+
+Generator:     104,385 parameters
+Discriminator: 125,314 parameters
+Total:         229,699 parameters
+Starting training for up to 100 epochs...
+  Critic updates per generator update: 5
+  Early stopping patience: 20
+  Mixed precision (AMP): True
+  Batch size: 512
+  Device: cuda
+
+Epoch 1/100:   0%|                                      | 0/153 [00:00<?, ?it/s]/usr/local/lib/python3.12/dist-packages/torch/autograd/graph.py:865: UserWarning: Attempting to run cuBLAS, but there was no current CUDA context! Attempting to set the primary context... (Triggered internally at /pytorch/aten/src/ATen/cuda/CublasHandlePool.cpp:330.)
+  return Variable._execution_engine.run_backward(  # Calls into the C++ engine to run the backward pass
+Epoch 1/100: 100%|█████| 153/153 [00:13<00:00, 10.97it/s, D=-8.3860, G=125.7039]
+  D: -5.5577 | G: 125.7039 | Recon: 1.217439 | D(real): 2.7511 | D(fake): -3.8246 | GP: 0.1018 | Time: 14.0s
+  ✓ Best model saved (recon: 1.217439)
+Epoch 2/100: 100%|████| 153/153 [00:12<00:00, 12.14it/s, D=-13.3326, G=116.4533]
+  D: -11.0585 | G: 116.4533 | Recon: 1.099173 | D(real): 5.8652 | D(fake): -6.4614 | GP: 0.1268 | Time: 12.6s
+  ✓ Best model saved (recon: 1.099173)
+Epoch 3/100: 100%|████| 153/153 [00:12<00:00, 12.24it/s, D=-18.2279, G=114.4914]
+  D: -16.0370 | G: 114.4914 | Recon: 1.052081 | D(real): 8.4838 | D(fake): -9.2473 | GP: 0.1694 | Time: 12.5s
+  ✓ Best model saved (recon: 1.052081)
+Epoch 4/100: 100%|████| 153/153 [00:12<00:00, 12.18it/s, D=-21.3436, G=115.6498]
+  D: -20.0589 | G: 115.6498 | Recon: 1.037177 | D(real): 10.5832 | D(fake): -11.8981 | GP: 0.2421 | Time: 12.6s
+  ✓ Best model saved (recon: 1.037177)
+Epoch 5/100: 100%|████| 153/153 [00:12<00:00, 12.09it/s, D=-23.5584, G=116.2845]
+  D: -22.5490 | G: 116.2845 | Recon: 1.021017 | D(real): 11.8169 | D(fake): -14.1551 | GP: 0.3424 | Time: 12.7s
+  ✓ Best model saved (recon: 1.021017)
+Epoch 6/100: 100%|████| 153/153 [00:12<00:00, 12.32it/s, D=-24.7960, G=118.2679]
+  D: -24.3882 | G: 118.2679 | Recon: 1.019699 | D(real): 12.6970 | D(fake): -16.2826 | GP: 0.4592 | Time: 12.4s
+  ✓ Best model saved (recon: 1.019699)
+Epoch 7/100: 100%|████| 153/153 [00:13<00:00, 11.64it/s, D=-26.4030, G=119.5183]
+  D: -25.7281 | G: 119.5183 | Recon: 1.011308 | D(real): 13.1467 | D(fake): -18.3450 | GP: 0.5764 | Time: 13.1s
+  ✓ Best model saved (recon: 1.011308)
+Epoch 8/100: 100%|████| 153/153 [00:13<00:00, 11.55it/s, D=-26.7025, G=120.5644]
+  D: -26.7131 | G: 120.5644 | Recon: 1.001910 | D(real): 13.1570 | D(fake): -20.3595 | GP: 0.6804 | Time: 13.3s
+  ✓ Best model saved (recon: 1.001910)
+Epoch 9/100: 100%|████| 153/153 [00:12<00:00, 11.90it/s, D=-27.8084, G=122.3236]
+  D: -27.3726 | G: 122.3236 | Recon: 1.000570 | D(real): 12.7349 | D(fake): -22.2472 | GP: 0.7609 | Time: 12.9s
+  ✓ Best model saved (recon: 1.000570)
+Epoch 10/100: 100%|███| 153/153 [00:12<00:00, 12.11it/s, D=-27.7670, G=121.6066]
+  D: -27.7236 | G: 121.6066 | Recon: 0.976280 | D(real): 11.9127 | D(fake): -23.9612 | GP: 0.8153 | Time: 12.6s
+  ✓ Best model saved (recon: 0.976280)
+Epoch 11/100: 100%|███| 153/153 [00:12<00:00, 12.00it/s, D=-27.0079, G=123.1657]
+  D: -27.6224 | G: 123.1657 | Recon: 0.978610 | D(real): 10.7468 | D(fake): -25.2688 | GP: 0.8393 | Time: 12.8s
+  ✗ No improvement (1/20)
+Epoch 12/100: 100%|███| 153/153 [00:13<00:00, 11.59it/s, D=-28.3156, G=123.6586]
+  D: -27.5418 | G: 123.6586 | Recon: 0.970820 | D(real): 9.4854 | D(fake): -26.5427 | GP: 0.8487 | Time: 13.2s
+  ✓ Best model saved (recon: 0.970820)
+Epoch 13/100: 100%|███| 153/153 [00:13<00:00, 11.63it/s, D=-28.1375, G=123.4387]
+  D: -27.7327 | G: 123.4387 | Recon: 0.954049 | D(real): 8.3908 | D(fake): -28.0163 | GP: 0.8674 | Time: 13.2s
+  ✓ Best model saved (recon: 0.954049)
+Epoch 14/100: 100%|███| 153/153 [00:12<00:00, 11.90it/s, D=-27.4537, G=123.1895]
+  D: -28.0599 | G: 123.1895 | Recon: 0.936587 | D(real): 7.4676 | D(fake): -29.5110 | GP: 0.8918 | Time: 12.9s
+  ✓ Best model saved (recon: 0.936587)
+Epoch 15/100: 100%|███| 153/153 [00:12<00:00, 12.23it/s, D=-28.5102, G=124.9631]
+  D: -28.2870 | G: 124.9631 | Recon: 0.940517 | D(real): 6.4970 | D(fake): -30.8679 | GP: 0.9079 | Time: 12.5s
+  ✗ No improvement (1/20)
+Epoch 16/100: 100%|███| 153/153 [00:12<00:00, 12.17it/s, D=-27.4117, G=125.4039]
+  D: -28.4656 | G: 125.4039 | Recon: 0.933299 | D(real): 5.6030 | D(fake): -32.0575 | GP: 0.9196 | Time: 12.6s
+  ✓ Best model saved (recon: 0.933299)
+Epoch 17/100: 100%|███| 153/153 [00:12<00:00, 12.26it/s, D=-28.2136, G=126.4764]
+  D: -28.6819 | G: 126.4764 | Recon: 0.933233 | D(real): 4.8603 | D(fake): -33.1587 | GP: 0.9337 | Time: 12.5s
+  ✓ Best model saved (recon: 0.933233)
+Epoch 18/100: 100%|███| 153/153 [00:12<00:00, 12.26it/s, D=-28.8913, G=126.2529]
+  D: -28.8756 | G: 126.2529 | Recon: 0.921143 | D(real): 4.2035 | D(fake): -34.1340 | GP: 0.9462 | Time: 12.5s
+  ✓ Best model saved (recon: 0.921143)
+Epoch 19/100: 100%|███| 153/153 [00:12<00:00, 12.27it/s, D=-28.3354, G=128.0797]
+  D: -28.9906 | G: 128.0797 | Recon: 0.929099 | D(real): 3.4213 | D(fake): -35.1661 | GP: 0.9597 | Time: 12.5s
+  ✗ No improvement (1/20)
+Epoch 20/100: 100%|███| 153/153 [00:12<00:00, 12.35it/s, D=-28.3351, G=127.4973]
+  D: -29.1108 | G: 127.4973 | Recon: 0.914796 | D(real): 2.7888 | D(fake): -35.9808 | GP: 0.9658 | Time: 12.4s
+  ✓ Best model saved (recon: 0.914796)
+Epoch 21/100: 100%|███| 153/153 [00:12<00:00, 12.38it/s, D=-30.1364, G=127.6389]
+  D: -29.2004 | G: 127.6389 | Recon: 0.909180 | D(real): 2.2294 | D(fake): -36.7228 | GP: 0.9752 | Time: 12.4s
+  ✓ Best model saved (recon: 0.909180)
+Epoch 22/100: 100%|███| 153/153 [00:12<00:00, 12.27it/s, D=-29.3451, G=129.1907]
+  D: -29.2183 | G: 129.1907 | Recon: 0.914511 | D(real): 1.2889 | D(fake): -37.6781 | GP: 0.9748 | Time: 12.5s
+  ✗ No improvement (1/20)
+Epoch 23/100: 100%|███| 153/153 [00:12<00:00, 12.15it/s, D=-28.4191, G=128.7518]
+  D: -29.1917 | G: 128.7518 | Recon: 0.904154 | D(real): 0.6645 | D(fake): -38.3178 | GP: 0.9790 | Time: 12.6s
+  ✓ Best model saved (recon: 0.904154)
+Epoch 24/100: 100%|███| 153/153 [00:12<00:00, 11.83it/s, D=-28.5835, G=127.6066]
+  D: -29.0953 | G: 127.6066 | Recon: 0.886358 | D(real): -0.1782 | D(fake): -39.0127 | GP: 0.9739 | Time: 12.9s
+  ✓ Best model saved (recon: 0.886358)
+Epoch 25/100: 100%|███| 153/153 [00:13<00:00, 11.24it/s, D=-28.6279, G=129.1543]
+  D: -28.8903 | G: 129.1543 | Recon: 0.894251 | D(real): -1.1470 | D(fake): -39.7104 | GP: 0.9673 | Time: 13.6s
+  ✗ No improvement (1/20)
+Epoch 26/100: 100%|███| 153/153 [00:13<00:00, 11.62it/s, D=-28.7794, G=129.1274]
+  D: -28.6897 | G: 129.1274 | Recon: 0.885389 | D(real): -2.3325 | D(fake): -40.5831 | GP: 0.9562 | Time: 13.2s
+  ✓ Best model saved (recon: 0.885389)
+Epoch 27/100: 100%|███| 153/153 [00:13<00:00, 11.74it/s, D=-28.1567, G=130.5137]
+  D: -28.5253 | G: 130.5137 | Recon: 0.892346 | D(real): -3.2040 | D(fake): -41.2467 | GP: 0.9519 | Time: 13.0s
+  ✗ No improvement (1/20)
+Epoch 28/100: 100%|███| 153/153 [00:12<00:00, 12.14it/s, D=-28.5737, G=129.5544]
+  D: -28.4378 | G: 129.5544 | Recon: 0.876961 | D(real): -3.9005 | D(fake): -41.8585 | GP: 0.9521 | Time: 12.6s
+  ✓ Best model saved (recon: 0.876961)
+Epoch 29/100: 100%|███| 153/153 [00:13<00:00, 11.48it/s, D=-28.2070, G=130.9804]
+  D: -28.4236 | G: 130.9804 | Recon: 0.883919 | D(real): -4.6506 | D(fake): -42.5613 | GP: 0.9489 | Time: 13.3s
+  ✗ No improvement (1/20)
+Epoch 30/100: 100%|███| 153/153 [00:13<00:00, 11.45it/s, D=-28.5220, G=130.6673]
+  D: -28.4703 | G: 130.6673 | Recon: 0.875746 | D(real): -5.0417 | D(fake): -43.0886 | GP: 0.9577 | Time: 13.4s
+  ✓ Best model saved (recon: 0.875746)
+Epoch 31/100: 100%|███| 153/153 [00:13<00:00, 11.74it/s, D=-27.7004, G=130.0802]
+  D: -28.4570 | G: 130.0802 | Recon: 0.864562 | D(real): -5.6504 | D(fake): -43.6442 | GP: 0.9537 | Time: 13.0s
+  ✓ Best model saved (recon: 0.864562)
+Epoch 32/100: 100%|███| 153/153 [00:12<00:00, 12.01it/s, D=-27.8736, G=131.3653]
+  D: -28.4771 | G: 131.3653 | Recon: 0.870205 | D(real): -6.3024 | D(fake): -44.3190 | GP: 0.9539 | Time: 12.7s
+  ✗ No improvement (1/20)
+Epoch 33/100: 100%|███| 153/153 [00:12<00:00, 12.02it/s, D=-28.1108, G=131.0931]
+  D: -28.4874 | G: 131.0931 | Recon: 0.861431 | D(real): -6.8807 | D(fake): -44.9293 | GP: 0.9562 | Time: 12.7s
+  ✓ Best model saved (recon: 0.861431)
+Epoch 34/100: 100%|███| 153/153 [00:12<00:00, 12.38it/s, D=-29.1347, G=132.0639]
+  D: -28.4713 | G: 132.0639 | Recon: 0.866795 | D(real): -7.2984 | D(fake): -45.3632 | GP: 0.9593 | Time: 12.4s
+  ✗ No improvement (1/20)
+Epoch 35/100: 100%|███| 153/153 [00:12<00:00, 12.25it/s, D=-28.0668, G=132.6972]
+  D: -28.4227 | G: 132.6972 | Recon: 0.868545 | D(real): -7.8500 | D(fake): -45.8123 | GP: 0.9539 | Time: 12.5s
+  ✗ No improvement (2/20)
+Epoch 36/100: 100%|███| 153/153 [00:12<00:00, 12.39it/s, D=-29.6302, G=132.6802]
+  D: -28.3998 | G: 132.6802 | Recon: 0.862594 | D(real): -8.5139 | D(fake): -46.4373 | GP: 0.9524 | Time: 12.4s
+  ✗ No improvement (3/20)
+Epoch 37/100: 100%|███| 153/153 [00:12<00:00, 12.29it/s, D=-28.2021, G=132.3637]
+  D: -28.3458 | G: 132.3637 | Recon: 0.856835 | D(real): -8.7884 | D(fake): -46.6675 | GP: 0.9534 | Time: 12.5s
+  ✓ Best model saved (recon: 0.856835)
+Epoch 38/100: 100%|███| 153/153 [00:12<00:00, 12.34it/s, D=-29.5619, G=133.6413]
+  D: -28.2826 | G: 133.6413 | Recon: 0.865048 | D(real): -9.2431 | D(fake): -47.0598 | GP: 0.9534 | Time: 12.4s
+  ✗ No improvement (1/20)
+Epoch 39/100: 100%|███| 153/153 [00:12<00:00, 12.39it/s, D=-28.3101, G=132.4101]
+  D: -28.2431 | G: 132.4101 | Recon: 0.849059 | D(real): -9.7819 | D(fake): -47.5239 | GP: 0.9499 | Time: 12.4s
+  ✓ Best model saved (recon: 0.849059)
+Epoch 40/100: 100%|███| 153/153 [00:12<00:00, 12.14it/s, D=-28.6069, G=132.9125]
+  D: -28.1493 | G: 132.9125 | Recon: 0.851927 | D(real): -10.1600 | D(fake): -47.7545 | GP: 0.9446 | Time: 12.6s
+  ✗ No improvement (1/20)
+Epoch 41/100: 100%|███| 153/153 [00:12<00:00, 12.17it/s, D=-27.8807, G=133.3078]
+  D: -28.0916 | G: 133.3078 | Recon: 0.847964 | D(real): -10.9454 | D(fake): -48.4683 | GP: 0.9431 | Time: 12.6s
+  ✓ Best model saved (recon: 0.847964)
+Epoch 42/100: 100%|███| 153/153 [00:12<00:00, 12.32it/s, D=-28.9595, G=133.9138]
+  D: -28.0283 | G: 133.9138 | Recon: 0.848753 | D(real): -11.5823 | D(fake): -49.0392 | GP: 0.9429 | Time: 12.4s
+  ✗ No improvement (1/20)
+Epoch 43/100: 100%|███| 153/153 [00:12<00:00, 12.25it/s, D=-28.2296, G=133.7675]
+  D: -27.9618 | G: 133.7675 | Recon: 0.847331 | D(real): -11.6334 | D(fake): -49.0055 | GP: 0.9411 | Time: 12.5s
+  ✓ Best model saved (recon: 0.847331)
+Epoch 44/100: 100%|███| 153/153 [00:12<00:00, 12.06it/s, D=-27.7798, G=134.0264]
+  D: -27.8673 | G: 134.0264 | Recon: 0.845212 | D(real): -12.2379 | D(fake): -49.4587 | GP: 0.9353 | Time: 12.7s
+  ✓ Best model saved (recon: 0.845212)
+Epoch 45/100: 100%|███| 153/153 [00:12<00:00, 12.24it/s, D=-27.2739, G=133.2984]
+  D: -27.7214 | G: 133.2984 | Recon: 0.835651 | D(real): -12.7221 | D(fake): -49.7355 | GP: 0.9292 | Time: 12.5s
+  ✓ Best model saved (recon: 0.835651)
+Epoch 46/100: 100%|███| 153/153 [00:12<00:00, 11.89it/s, D=-27.2888, G=134.2434]
+  D: -27.5991 | G: 134.2434 | Recon: 0.841987 | D(real): -13.2941 | D(fake): -50.0835 | GP: 0.9190 | Time: 12.9s
+  ✗ No improvement (1/20)
+Epoch 47/100: 100%|███| 153/153 [00:12<00:00, 11.98it/s, D=-26.1083, G=133.6796]
+  D: -27.4547 | G: 133.6796 | Recon: 0.831775 | D(real): -13.8721 | D(fake): -50.4775 | GP: 0.9151 | Time: 12.8s
+  ✓ Best model saved (recon: 0.831775)
+Epoch 48/100: 100%|███| 153/153 [00:12<00:00, 11.95it/s, D=-27.2761, G=132.6914]
+  D: -27.2458 | G: 132.6914 | Recon: 0.819404 | D(real): -14.4124 | D(fake): -50.7516 | GP: 0.9093 | Time: 12.8s
+  ✓ Best model saved (recon: 0.819404)
+Epoch 49/100: 100%|███| 153/153 [00:12<00:00, 11.95it/s, D=-26.8722, G=133.1075]
+  D: -27.0631 | G: 133.1075 | Recon: 0.820086 | D(real): -14.9618 | D(fake): -51.0272 | GP: 0.9002 | Time: 12.8s
+  ✗ No improvement (1/20)
+Epoch 50/100: 100%|███| 153/153 [00:13<00:00, 11.51it/s, D=-26.9704, G=133.1188]
+  D: -26.8958 | G: 133.1188 | Recon: 0.819490 | D(real): -15.3402 | D(fake): -51.1799 | GP: 0.8943 | Time: 13.3s
+  ✗ No improvement (2/20)
+Epoch 51/100: 100%|███| 153/153 [00:13<00:00, 11.45it/s, D=-26.2333, G=133.0065]
+  D: -26.7893 | G: 133.0065 | Recon: 0.815440 | D(real): -15.8399 | D(fake): -51.5033 | GP: 0.8874 | Time: 13.4s
+  ✓ Best model saved (recon: 0.815440)
+Epoch 52/100: 100%|███| 153/153 [00:13<00:00, 11.70it/s, D=-27.5468, G=132.6261]
+  D: -26.6552 | G: 132.6261 | Recon: 0.807293 | D(real): -16.4718 | D(fake): -51.9367 | GP: 0.8811 | Time: 13.1s
+  ✓ Best model saved (recon: 0.807293)
+Epoch 53/100: 100%|███| 153/153 [00:13<00:00, 11.53it/s, D=-26.6574, G=132.9716]
+  D: -26.6011 | G: 132.9716 | Recon: 0.805862 | D(real): -16.9169 | D(fake): -52.3292 | GP: 0.8811 | Time: 13.3s
+  ✓ Best model saved (recon: 0.805862)
+Epoch 54/100: 100%|███| 153/153 [00:13<00:00, 11.53it/s, D=-26.7475, G=133.0434]
+  D: -26.5592 | G: 133.0434 | Recon: 0.802789 | D(real): -17.3186 | D(fake): -52.6804 | GP: 0.8802 | Time: 13.3s
+  ✓ Best model saved (recon: 0.802789)
+Epoch 55/100: 100%|███| 153/153 [00:13<00:00, 11.71it/s, D=-27.1697, G=131.9901]
+  D: -26.4643 | G: 131.9901 | Recon: 0.794047 | D(real): -17.4745 | D(fake): -52.6975 | GP: 0.8760 | Time: 13.1s
+  ✓ Best model saved (recon: 0.794047)
+Epoch 56/100: 100%|███| 153/153 [00:13<00:00, 11.72it/s, D=-26.9714, G=133.1218]
+  D: -26.4191 | G: 133.1218 | Recon: 0.800916 | D(real): -17.9152 | D(fake): -53.0423 | GP: 0.8704 | Time: 13.1s
+  ✗ No improvement (1/20)
+Epoch 57/100: 100%|███| 153/153 [00:12<00:00, 11.93it/s, D=-25.7625, G=133.6585]
+  D: -26.4087 | G: 133.6585 | Recon: 0.803117 | D(real): -18.1780 | D(fake): -53.3088 | GP: 0.8722 | Time: 12.8s
+  ✗ No improvement (2/20)
+Epoch 58/100: 100%|███| 153/153 [00:13<00:00, 11.66it/s, D=-26.2539, G=133.6510]
+  D: -26.3565 | G: 133.6510 | Recon: 0.799614 | D(real): -18.6349 | D(fake): -53.6885 | GP: 0.8699 | Time: 13.1s
+  ✗ No improvement (3/20)
+Epoch 59/100: 100%|███| 153/153 [00:12<00:00, 11.82it/s, D=-25.6200, G=133.0286]
+  D: -26.3382 | G: 133.0286 | Recon: 0.790078 | D(real): -19.0923 | D(fake): -54.1283 | GP: 0.8699 | Time: 12.9s
+  ✓ Best model saved (recon: 0.790078)
+Epoch 60/100: 100%|███| 153/153 [00:12<00:00, 12.09it/s, D=-26.6020, G=132.3595]
+  D: -26.3084 | G: 132.3595 | Recon: 0.782543 | D(real): -19.1855 | D(fake): -54.2026 | GP: 0.8708 | Time: 12.7s
+  ✓ Best model saved (recon: 0.782543)
+Epoch 61/100: 100%|███| 153/153 [00:12<00:00, 12.25it/s, D=-26.4621, G=133.3993]
+  D: -26.2571 | G: 133.3993 | Recon: 0.787514 | D(real): -19.6977 | D(fake): -54.6109 | GP: 0.8656 | Time: 12.5s
+  ✗ No improvement (1/20)
+Epoch 62/100: 100%|███| 153/153 [00:12<00:00, 12.25it/s, D=-27.5857, G=133.7443]
+  D: -26.2039 | G: 133.7443 | Recon: 0.789350 | D(real): -19.9951 | D(fake): -54.8280 | GP: 0.8630 | Time: 12.5s
+  ✗ No improvement (2/20)
+Epoch 63/100: 100%|███| 153/153 [00:12<00:00, 12.05it/s, D=-25.9288, G=132.9789]
+  D: -26.2148 | G: 132.9789 | Recon: 0.777268 | D(real): -20.3614 | D(fake): -55.2412 | GP: 0.8667 | Time: 12.7s
+  ✓ Best model saved (recon: 0.777268)
+Epoch 64/100: 100%|███| 153/153 [00:12<00:00, 12.31it/s, D=-25.7820, G=132.3477]
+  D: -26.1300 | G: 132.3477 | Recon: 0.771029 | D(real): -20.5122 | D(fake): -55.2661 | GP: 0.8624 | Time: 12.4s
+  ✓ Best model saved (recon: 0.771029)
+Epoch 65/100: 100%|███| 153/153 [00:12<00:00, 12.21it/s, D=-25.9670, G=133.4103]
+  D: -26.0895 | G: 133.4103 | Recon: 0.780665 | D(real): -20.6955 | D(fake): -55.3750 | GP: 0.8588 | Time: 12.5s
+  ✗ No improvement (1/20)
+Epoch 66/100: 100%|███| 153/153 [00:12<00:00, 12.36it/s, D=-25.2687, G=132.9659]
+  D: -26.0832 | G: 132.9659 | Recon: 0.771138 | D(real): -21.1107 | D(fake): -55.8109 | GP: 0.8618 | Time: 12.4s
+  ✗ No improvement (2/20)
+Epoch 67/100: 100%|███| 153/153 [00:12<00:00, 12.38it/s, D=-26.8900, G=133.8416]
+  D: -26.0071 | G: 133.8416 | Recon: 0.775582 | D(real): -21.6245 | D(fake): -56.1777 | GP: 0.8546 | Time: 12.4s
+  ✗ No improvement (3/20)
+Epoch 68/100: 100%|███| 153/153 [00:12<00:00, 12.25it/s, D=-26.4703, G=134.6891]
+  D: -26.0430 | G: 134.6891 | Recon: 0.780693 | D(real): -22.0282 | D(fake): -56.6438 | GP: 0.8574 | Time: 12.5s
+  ✗ No improvement (4/20)
+Epoch 69/100: 100%|███| 153/153 [00:12<00:00, 12.15it/s, D=-26.8512, G=133.8480]
+  D: -25.9960 | G: 133.8480 | Recon: 0.771876 | D(real): -22.1165 | D(fake): -56.6718 | GP: 0.8560 | Time: 12.6s
+  ✗ No improvement (5/20)
+Epoch 70/100: 100%|███| 153/153 [00:12<00:00, 12.35it/s, D=-25.2104, G=133.6991]
+  D: -25.9383 | G: 133.6991 | Recon: 0.765907 | D(real): -22.5715 | D(fake): -57.0439 | GP: 0.8535 | Time: 12.4s
+  ✓ Best model saved (recon: 0.765907)
+Epoch 71/100: 100%|███| 153/153 [00:12<00:00, 12.40it/s, D=-26.1867, G=133.8318]
+  D: -25.9446 | G: 133.8318 | Recon: 0.766412 | D(real): -22.6414 | D(fake): -57.1289 | GP: 0.8543 | Time: 12.3s
+  ✗ No improvement (1/20)
+Epoch 72/100: 100%|███| 153/153 [00:12<00:00, 12.14it/s, D=-25.5721, G=133.1690]
+  D: -25.8988 | G: 133.1690 | Recon: 0.757794 | D(real): -23.0018 | D(fake): -57.4042 | GP: 0.8504 | Time: 12.6s
+  ✓ Best model saved (recon: 0.757794)
+Epoch 73/100: 100%|███| 153/153 [00:12<00:00, 12.37it/s, D=-26.3520, G=133.0355]
+  D: -25.9015 | G: 133.0355 | Recon: 0.756001 | D(real): -22.9257 | D(fake): -57.3468 | GP: 0.8519 | Time: 12.4s
+  ✓ Best model saved (recon: 0.756001)
+Epoch 74/100: 100%|███| 153/153 [00:12<00:00, 12.35it/s, D=-24.9910, G=132.5995]
+  D: -25.9062 | G: 132.5995 | Recon: 0.752589 | D(real): -23.0052 | D(fake): -57.3858 | GP: 0.8474 | Time: 12.4s
+  ✓ Best model saved (recon: 0.752589)
+Epoch 75/100: 100%|███| 153/153 [00:12<00:00, 12.39it/s, D=-26.0142, G=132.5632]
+  D: -25.9831 | G: 132.5632 | Recon: 0.752517 | D(real): -22.7274 | D(fake): -57.2535 | GP: 0.8544 | Time: 12.3s
+  ✓ Best model saved (recon: 0.752517)
+Epoch 76/100: 100%|███| 153/153 [00:12<00:00, 12.32it/s, D=-26.7024, G=133.1849]
+  D: -26.2419 | G: 133.1849 | Recon: 0.761505 | D(real): -22.2155 | D(fake): -57.0127 | GP: 0.8555 | Time: 12.4s
+  ✗ No improvement (1/20)
+Epoch 77/100: 100%|███| 153/153 [00:12<00:00, 12.23it/s, D=-27.3692, G=132.3436]
+  D: -27.0979 | G: 132.3436 | Recon: 0.756634 | D(real): -20.9037 | D(fake): -56.7055 | GP: 0.8704 | Time: 12.5s
+  ✗ No improvement (2/20)
+Epoch 78/100: 100%|███| 153/153 [00:12<00:00, 12.13it/s, D=-32.5523, G=130.3693]
+  D: -29.9004 | G: 130.3693 | Recon: 0.754850 | D(real): -15.8820 | D(fake): -54.9281 | GP: 0.9144 | Time: 12.6s
+  ✗ No improvement (3/20)
+Epoch 79/100: 100%|███| 153/153 [00:12<00:00, 12.24it/s, D=-45.4073, G=122.9107]
+  D: -37.9181 | G: 122.9107 | Recon: 0.741857 | D(real): -1.0102 | D(fake): -48.8615 | GP: 0.9934 | Time: 12.5s
+  ✓ Best model saved (recon: 0.741857)
+Epoch 80/100: 100%|███| 153/153 [00:12<00:00, 12.29it/s, D=-58.4171, G=119.8680]
+  D: -53.0447 | G: 119.8680 | Recon: 0.748200 | D(real): 17.8594 | D(fake): -44.9643 | GP: 0.9780 | Time: 12.5s
+  ✗ No improvement (1/20)
+Epoch 81/100: 100%|███| 153/153 [00:12<00:00, 12.24it/s, D=-76.0098, G=127.5204]
+  D: -69.2047 | G: 127.5204 | Recon: 0.745839 | D(real): 25.6293 | D(fake): -52.9144 | GP: 0.9339 | Time: 12.5s
+  ✗ No improvement (2/20)
+Epoch 82/100: 100%|███| 153/153 [00:12<00:00, 12.36it/s, D=-92.2639, G=136.3568]
+  D: -84.7404 | G: 136.3568 | Recon: 0.745579 | D(real): 32.0823 | D(fake): -61.6987 | GP: 0.9039 | Time: 12.4s
+  ✗ No improvement (3/20)
+Epoch 83/100: 100%|██| 153/153 [00:12<00:00, 12.14it/s, D=-106.8865, G=142.3655]
+  D: -99.1588 | G: 142.3655 | Recon: 0.737905 | D(real): 39.0086 | D(fake): -68.4902 | GP: 0.8340 | Time: 12.6s
+  ✓ Best model saved (recon: 0.737905)
+Epoch 84/100: 100%|██| 153/153 [00:12<00:00, 12.29it/s, D=-115.4787, G=148.2370]
+  D: -112.1288 | G: 148.2370 | Recon: 0.739329 | D(real): 45.6146 | D(fake): -74.2267 | GP: 0.7713 | Time: 12.5s
+  ✗ No improvement (1/20)
+Epoch 85/100: 100%|██| 153/153 [00:12<00:00, 12.18it/s, D=-130.8575, G=152.6411]
+  D: -124.1237 | G: 152.6411 | Recon: 0.733286 | D(real): 52.2651 | D(fake): -79.2259 | GP: 0.7366 | Time: 12.6s
+  ✓ Best model saved (recon: 0.733286)
+Epoch 86/100: 100%|██| 153/153 [00:12<00:00, 12.21it/s, D=-142.4546, G=157.9838]
+  D: -135.0775 | G: 157.9838 | Recon: 0.741192 | D(real): 58.6179 | D(fake): -83.7251 | GP: 0.7266 | Time: 12.5s
+  ✗ No improvement (1/20)
+Epoch 87/100: 100%|██| 153/153 [00:12<00:00, 12.35it/s, D=-144.6246, G=161.7602]
+  D: -145.1299 | G: 161.7602 | Recon: 0.736477 | D(real): 64.0705 | D(fake): -88.0748 | GP: 0.7015 | Time: 12.4s
+  ✗ No improvement (2/20)
+Epoch 88/100: 100%|██| 153/153 [00:12<00:00, 12.32it/s, D=-165.1879, G=164.7570]
+  D: -154.7842 | G: 164.7570 | Recon: 0.725091 | D(real): 69.4826 | D(fake): -92.1499 | GP: 0.6852 | Time: 12.4s
+  ✓ Best model saved (recon: 0.725091)
+Epoch 89/100: 100%|██| 153/153 [00:12<00:00, 12.22it/s, D=-165.0434, G=169.5440]
+  D: -164.6224 | G: 169.5440 | Recon: 0.732523 | D(real): 75.1752 | D(fake): -96.1577 | GP: 0.6712 | Time: 12.5s
+  ✗ No improvement (1/20)
+Epoch 90/100: 100%|██| 153/153 [00:12<00:00, 12.25it/s, D=-179.5443, G=172.1047]
+  D: -173.2909 | G: 172.1047 | Recon: 0.720235 | D(real): 80.1348 | D(fake): -100.0960 | GP: 0.6938 | Time: 12.5s
+  ✓ Best model saved (recon: 0.720235)
+Epoch 91/100: 100%|██| 153/153 [00:12<00:00, 12.28it/s, D=-184.8203, G=176.7780]
+  D: -182.3442 | G: 176.7780 | Recon: 0.726884 | D(real): 84.7373 | D(fake): -104.0380 | GP: 0.6429 | Time: 12.5s
+  ✗ No improvement (1/20)
+Epoch 92/100: 100%|██| 153/153 [00:12<00:00, 12.15it/s, D=-195.7521, G=180.4732]
+  D: -190.5319 | G: 180.4732 | Recon: 0.726232 | D(real): 89.3346 | D(fake): -107.7884 | GP: 0.6591 | Time: 12.6s
+  ✗ No improvement (2/20)
+Epoch 93/100: 100%|██| 153/153 [00:12<00:00, 12.10it/s, D=-202.1877, G=184.4215]
+  D: -198.5901 | G: 184.4215 | Recon: 0.725944 | D(real): 93.3742 | D(fake): -111.7173 | GP: 0.6497 | Time: 12.6s
+  ✗ No improvement (3/20)
+Epoch 94/100: 100%|██| 153/153 [00:12<00:00, 12.39it/s, D=-209.8878, G=187.6256]
+  D: -206.5634 | G: 187.6256 | Recon: 0.721901 | D(real): 97.5310 | D(fake): -115.5155 | GP: 0.6482 | Time: 12.4s
+  ✗ No improvement (4/20)
+Epoch 95/100: 100%|██| 153/153 [00:12<00:00, 12.21it/s, D=-219.6642, G=191.7002]
+  D: -214.5577 | G: 191.7002 | Recon: 0.720731 | D(real): 101.5858 | D(fake): -119.4845 | GP: 0.6510 | Time: 12.5s
+  ✗ No improvement (5/20)
+Epoch 96/100: 100%|██| 153/153 [00:12<00:00, 12.29it/s, D=-226.6232, G=194.1851]
+  D: -222.2334 | G: 194.1851 | Recon: 0.709372 | D(real): 105.5670 | D(fake): -123.1928 | GP: 0.6529 | Time: 12.5s
+  ✓ Best model saved (recon: 0.709372)
+Epoch 97/100: 100%|██| 153/153 [00:12<00:00, 12.17it/s, D=-234.9764, G=200.0730]
+  D: -228.9054 | G: 200.0730 | Recon: 0.730272 | D(real): 109.6103 | D(fake): -127.0466 | GP: 0.7756 | Time: 12.6s
+  ✗ No improvement (1/20)
+Epoch 98/100: 100%|██| 153/153 [00:12<00:00, 12.14it/s, D=-243.0739, G=202.5542]
+  D: -238.0582 | G: 202.5542 | Recon: 0.718251 | D(real): 114.0903 | D(fake): -130.7614 | GP: 0.6794 | Time: 12.6s
+  ✗ No improvement (2/20)
+Epoch 99/100: 100%|██| 153/153 [00:12<00:00, 12.20it/s, D=-247.0450, G=206.9395]
+  D: -245.4800 | G: 206.9395 | Recon: 0.724812 | D(real): 117.9502 | D(fake): -134.5711 | GP: 0.7045 | Time: 12.5s
+  ✗ No improvement (3/20)
+Epoch 100/100: 100%|█| 153/153 [00:12<00:00, 12.26it/s, D=-258.7773, G=210.6161]
+  D: -252.9284 | G: 210.6161 | Recon: 0.722995 | D(real): 121.5045 | D(fake): -138.2884 | GP: 0.6874 | Time: 12.5s
+  ✗ No improvement (4/20)
+
+Training complete! Best recon loss: 0.709372
+Total time: 1268s (21.1 min)
+Figure(1400x1000)
+Saved: /kaggle/working/fin-gan-/notebooks/../checkpoints/training_metrics.png
+Loading test data (benign + attacks)...
+  Total test samples: 353,107
+  Test windows: 353,098
+Computing baselines on training data...
+Baseline: 100%|██████████████████████████████| 153/153 [00:01<00:00, 127.58it/s]
+  Benign recon baseline: μ=0.6864, σ=0.6898
+  Benign D(x)  baseline: μ=-110.9988, σ=2.3015
+Running inference...
+Inference: 100%|█████████████████████████████| 690/690 [00:05<00:00, 124.28it/s]
+
+=======================================================
+  Scoring Method Comparison
+=======================================================
+  Mean MSE (raw)                      AUC = 0.9301 ◀ best
+  -D(x) (raw)                         AUC = 0.0887
+  Recon z-score                       AUC = 0.9301
+  D z-score                           AUC = 0.0887
+  Recon_z + D_z (1:1)                 AUC = 0.1362
+  0.7·Recon_z + 0.3·D_z               AUC = 0.1676
+  0.5·Recon_z + 0.5·D_z               AUC = 0.1362
+  0.3·Recon_z + 0.7·D_z               AUC = 0.1103
+  max(Recon_z, D_z)                   AUC = 0.9304 ◀ best
+
+  ➤ Using: max(Recon_z, D_z) (AUC = 0.9304)
+
+  Benign score stats:
+    Recon  — median=0.53, mean=0.70, p95=1.72
+    D(x)   — median=-111.24, mean=-110.94, p5=-113.98
+
+  Attack score stats:
+    Recon  — median=4.39, mean=36.74, p95=33.78
+    D(x)   — median=8.89, mean=-2.84, p5=-112.62
+
+Inference complete!
+  Benign windows: 19,558
+  Attack windows: 333,540
+  Score range: [-0.3536, 10183.9844]
+==================================================
+  ROC-AUC: 0.9304
+==================================================
+
+  Optimal threshold (Youden's J): 2.6654
+  At this threshold → TPR: 0.8188, FPR: 0.0187
+
+  Accuracy:  0.8278
+  Precision: 0.9987
+  Recall:    0.8188
+  F1-Score:  0.8999
+Figure(1400x600)
+Figure(600x500)
+
+============================================================
+  Per-Attack-Type Detection Rates
+============================================================
+
+  Attack Type             Count   Detected     Rate
+  --------------------------------------------------
+  DrDoS_DNS               3,660         81   0.0221
+  DrDoS_LDAP              1,440         27   0.0187
+  DrDoS_MSSQL             6,212      2,955   0.4757
+  DrDoS_NTP             121,368    120,464   0.9926
+  DrDoS_NetBIOS             598          0   0.0000
+  DrDoS_SNMP              2,717          0   0.0000
+  LDAP                    1,906         42   0.0220
+  MSSQL                   8,378      8,378   1.0000
+  NetBIOS                   644          4   0.0062
+  Portmap                   685          0   0.0000
+  Syn                    43,835     16,167   0.3688
+  TFTP                   80,488     68,333   0.8490
+
+  Benign (TNR)           81,167     24,138   0.2974
+
+============================================================
+  Full Classification Report
+============================================================
+              precision    recall  f1-score   support
+
+      Benign     0.2411    0.9813    0.3870     19558
+      Attack     0.9987    0.8188    0.8999    333540
+
+    accuracy                         0.8278    353098
+   macro avg     0.6199    0.9001    0.6434    353098
+weighted avg     0.9567    0.8278    0.8714    353098
+
+
+============================================================
+  FINAL RESULTS SUMMARY
+============================================================
+
+  Architecture:     Bidirectional GRU + Attention Pooling (WGAN-GP)
+  Training samples: 78,264 benign flows
+  Test samples:     353,107 total flows
+  Features:         65
+  
+  ROC-AUC:          0.9304
+  Accuracy:         0.8278
+  Precision:        0.9987
+  Recall:           0.8188
+  F1-Score:         0.8999
+  
+  Best epoch:       96
+  Total train time: 1268s (21.1 min)
+  
+  Checkpoints saved to: /kaggle/working/fin-gan-/notebooks/../checkpoints/
